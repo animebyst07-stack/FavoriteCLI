@@ -45,8 +45,7 @@ class SlashCompleter(Completer):
         if not text.startswith("/"):
             return
         partial = text.lower()
-        starts = []
-        contains = []
+        starts, contains = [], []
         for cmd, desc in ALL_COMMANDS:
             low = cmd.lower()
             if low.startswith(partial):
@@ -58,22 +57,19 @@ class SlashCompleter(Completer):
             if cmd in seen:
                 continue
             seen.add(cmd)
-            display = _highlight(cmd, text)
             yield Completion(
                 cmd,
                 start_position=-len(text),
-                display=display,
+                display=_highlight(cmd, text),
                 display_meta=desc,
             )
 
 
 def _highlight(cmd: str, partial: str) -> HTML:
-    low_cmd = cmd.lower()
-    low_partial = partial.lower()
-    result = ""
-    i = 0
+    low_cmd, low_partial = cmd.lower(), partial.lower()
+    result, i = "", 0
     while i < len(cmd):
-        if low_cmd[i:i+len(low_partial)] == low_partial and low_partial:
+        if low_partial and low_cmd[i:i+len(low_partial)] == low_partial:
             result += f"<ansiyellow><b>{cmd[i:i+len(low_partial)]}</b></ansiyellow>"
             i += len(low_partial)
         else:
@@ -86,8 +82,9 @@ def build_session() -> PromptSession:
     kb = KeyBindings()
 
     @kb.add("escape")
-    def _cancel(event):
-        event.app.exit(exception=KeyboardInterrupt())
+    def _noop(event):
+        # Escape просто сбрасывает текущий ввод, не выходит
+        event.app.current_buffer.reset()
 
     return PromptSession(
         completer=SlashCompleter(),
@@ -96,15 +93,9 @@ def build_session() -> PromptSession:
         history=InMemoryHistory(),
         complete_while_typing=True,
         mouse_support=False,
+        # bottom_toolbar убран намеренно
     )
 
 
 def get_prompt_tokens():
-    return [
-        ("class:prompt-arrow", "\u276f "),
-    ]
-
-
-BOTTOM_TOOLBAR = HTML(
-    '<style bg="#1a1a1a" fg="#555555">  ? for shortcuts  |  esc to stop</style>'
-)
+    return [("class:prompt-arrow", "\u276f ")]
