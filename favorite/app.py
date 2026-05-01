@@ -2,21 +2,14 @@
 FavoriteCLI — main application entry point (DI container + run loop).
 """
 import os
-import sys
 from pathlib import Path
 
-from prompt_toolkit import prompt as pt_prompt
-from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 
 from .platform import detect_platform
 from .config.loader import get_config
-from .setup_wizard import run_setup
-from .ui.welcome import render_welcome, render_separator
-from .ui.chat import (
-    print_user_line, print_agent_message, print_separator,
-    print_step_block,
-)
+from .ui.welcome import render_welcome
+from .ui.chat import print_agent_message, print_separator
 from .ui.prompt import build_session, BOTTOM_TOOLBAR, get_prompt_tokens
 from .ui.theme import STYLE
 from .sessions.manager import SessionManager
@@ -76,26 +69,26 @@ def run() -> None:
     platform = detect_platform()
     cfg = get_config()
 
-    # Первый запуск без ключей — мастер настройки
-    if not cfg.has_any_provider():
-        run_setup(cfg)
-        # Перезагружаем конфиг после того как пользователь всё ввёл
-        from .config.loader import reload_config
-        cfg = reload_config()
-
     workdir = _pick_workdir()
 
     mgr = SessionManager()
     session_id = mgr.create_session(workdir=workdir)
 
     default_key = cfg.default_openrouter_key()
-    model_name = (default_key or {}).get("model", "—")
-    if not default_key:
+    model_name = (default_key or {}).get("model", None)
+    if not model_name:
         fav = cfg.default_favorite_key()
-        if fav:
-            model_name = "FavoriteAPI/" + (fav.get("model") or "default")
+        model_name = ("FavoriteAPI/" + (fav.get("model") or "default")) if fav else "нет ключей"
 
     render_welcome(model_name=model_name, workdir=workdir)
+
+    if not cfg.has_any_provider():
+        console.print(
+            "[dim]Ключи не настроены. Добавь через [/dim]"
+            "[bold #ff8c00]/OpenRouter API[/bold #ff8c00]"
+            "[dim] или [/dim]"
+            "[bold #ff8c00]/Favorite API[/bold #ff8c00]\n"
+        )
 
     registry = _build_registry()
     ctx = CommandContext(
@@ -107,9 +100,7 @@ def run() -> None:
 
     session = build_session()
 
-    console.print(
-        "\n[dim]Введи сообщение или / для команд. Ctrl+C для выхода.[/dim]\n"
-    )
+    console.print("[dim]Введи сообщение или / для команд. Ctrl+C — выход.[/dim]\n")
 
     while True:
         try:
@@ -135,11 +126,11 @@ def run() -> None:
         if not raw:
             continue
 
+        from .ui.chat import print_user_line
         print_user_line(raw)
         mgr.append_history(session_id, {"type": "user", "content": raw})
 
         if raw.startswith("/"):
-            # Найти команду по точному совпадению или префиксу
             matched_cmd = None
             matched_args = ""
             for c in registry.all_sorted():
@@ -157,7 +148,9 @@ def run() -> None:
         else:
             if not cfg.has_any_provider():
                 console.print(
-                    "[yellow]Нет API-ключа. Добавь через /OpenRouter API или /Favorite API.[/yellow]"
+                    "[yellow]Нет API-ключа.[/yellow] "
+                    "Добавь через [bold #ff8c00]/OpenRouter API[/bold #ff8c00] "
+                    "или [bold #ff8c00]/Favorite API[/bold #ff8c00]"
                 )
             else:
                 _handle_chat(raw, ctx, mgr, session_id, cfg)
@@ -165,10 +158,7 @@ def run() -> None:
     console.print("\n[dim]До встречи. Сессия сохранена.[/dim]")
 
 
-def _handle_chat(
-    text: str, ctx: CommandContext, mgr: SessionManager,
-    session_id: str, cfg,
-) -> None:
+def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
     from .ui.spinner import Spinner
     spinner = Spinner()
     spinner.start()
