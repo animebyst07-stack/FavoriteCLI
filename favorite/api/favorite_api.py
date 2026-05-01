@@ -1,0 +1,47 @@
+import requests
+
+from .base import IChatProvider, ChatMessage, ChatResponse
+
+
+class FavoriteApiClient(IChatProvider):
+    DEFAULT_BASE = "http://127.0.0.1:5005"
+
+    def __init__(self, api_key: str, base_url: str = DEFAULT_BASE, model: str | None = None):
+        self._key = api_key
+        self._base = base_url.rstrip("/")
+        self._model = model or "gemini-3.0-flash-thinking"
+        self._headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def provider_name(self) -> str:
+        return "FavoriteAPI"
+
+    def chat(self, messages: list[ChatMessage], model: str | None = None) -> ChatResponse:
+        body: dict = {"messages": [{"role": m.role, "content": m.content} for m in messages]}
+        if model or self._model:
+            body["model"] = model or self._model
+        r = requests.post(f"{self._base}/api/v1/chat", headers=self._headers, json=body, timeout=90)
+        r.raise_for_status()
+        data = r.json()
+        content = data["choices"][0]["message"]["content"]
+        ctx_kb = data.get("context_kb", 0.0)
+        return ChatResponse(content=content, model=model or self._model, context_kb=ctx_kb, raw=data)
+
+    def list_models(self) -> list[dict]:
+        r = requests.get(f"{self._base}/api/v1/models", headers=self._headers, timeout=15)
+        if r.status_code != 200:
+            return []
+        return r.json().get("models", [])
+
+    def get_me(self) -> dict:
+        r = requests.get(f"{self._base}/api/v1/me", headers=self._headers, timeout=15)
+        if r.status_code == 200:
+            return r.json()
+        return {}
+
+    def reset_context(self) -> dict:
+        r = requests.post(f"{self._base}/api/v1/reset", headers=self._headers, timeout=15)
+        return r.json() if r.status_code == 200 else {}
