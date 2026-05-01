@@ -160,10 +160,19 @@ def run() -> None:
 
 def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
     from .ui.spinner import Spinner
+    import requests as _req
     spinner = Spinner()
     spinner.start()
     try:
         response = _call_llm(text, cfg)
+    except _req.exceptions.ConnectionError:
+        spinner.stop()
+        console.print(
+            "[bold red]FavoriteAPI сервер не запущен.[/bold red] "
+            "[dim]Запусти в другом терминале:[/dim] "
+            "[bold #ff8c00]python api.py[/bold #ff8c00]"
+        )
+        return
     except Exception as e:
         spinner.stop()
         console.print(f"[red]Ошибка API: {e}[/red]")
