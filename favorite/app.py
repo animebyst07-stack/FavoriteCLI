@@ -11,10 +11,11 @@ from rich.console import Console
 
 from .platform import detect_platform
 from .config.loader import get_config
+from .setup_wizard import run_setup
 from .ui.welcome import render_welcome, render_separator
 from .ui.chat import (
     print_user_line, print_agent_message, print_separator,
-    print_step_block, print_status
+    print_step_block,
 )
 from .ui.prompt import build_session, BOTTOM_TOOLBAR, get_prompt_tokens
 from .ui.theme import STYLE
@@ -49,12 +50,12 @@ def _pick_workdir() -> str:
         if choice == "2":
             while True:
                 try:
-                    p = input("  Путь к директории: ").strip()
+                    p = input("  Путь: ").strip()
                 except (EOFError, KeyboardInterrupt):
                     return os.getcwd()
                 if Path(p).is_dir():
                     return str(Path(p).resolve())
-                console.print(f"  [red]Директория не найдена: {p}[/red]")
+                console.print(f"  [red]Не найдено: {p}[/red]")
 
 
 def _build_registry() -> CommandRegistry:
@@ -74,13 +75,25 @@ def _build_registry() -> CommandRegistry:
 def run() -> None:
     platform = detect_platform()
     cfg = get_config()
+
+    # Первый запуск без ключей — мастер настройки
+    if not cfg.has_any_provider():
+        run_setup(cfg)
+        # Перезагружаем конфиг после того как пользователь всё ввёл
+        from .config.loader import reload_config
+        cfg = reload_config()
+
     workdir = _pick_workdir()
 
     mgr = SessionManager()
     session_id = mgr.create_session(workdir=workdir)
 
     default_key = cfg.default_openrouter_key()
-    model_name = (default_key or {}).get("model", "qwen/qwen3-coder:free")
+    model_name = (default_key or {}).get("model", "—")
+    if not default_key:
+        fav = cfg.default_favorite_key()
+        if fav:
+            model_name = "FavoriteAPI/" + (fav.get("model") or "default")
 
     render_welcome(model_name=model_name, workdir=workdir)
 
@@ -106,7 +119,7 @@ def run() -> None:
                 bottom_toolbar=BOTTOM_TOOLBAR,
             )
         except KeyboardInterrupt:
-            console.print("\n[dim]Прерывание. Ctrl+C ещё раз для выхода.[/dim]")
+            console.print("\n[dim]Ctrl+C — нажми ещё раз для выхода.[/dim]")
             try:
                 session.prompt(
                     [("class:prompt-arrow", "\u276f ")],
@@ -126,36 +139,41 @@ def run() -> None:
         mgr.append_history(session_id, {"type": "user", "content": raw})
 
         if raw.startswith("/"):
-            cmd_name = raw
-            cmd_args = ""
+            # Найти команду по точному совпадению или префиксу
+            matched_cmd = None
+            matched_args = ""
             for c in registry.all_sorted():
                 if raw.lower().startswith(c.name.lower()):
-                    cmd_name = c.name
-                    cmd_args = raw[len(c.name):].strip()
+                    matched_cmd = c
+                    matched_args = raw[len(c.name):].strip()
                     break
-            cmd = registry.get(cmd_name)
-            if cmd:
+            if matched_cmd:
                 try:
-                    cmd.execute(cmd_args, ctx)
+                    matched_cmd.execute(matched_args, ctx)
                 except Exception as e:
                     console.print(f"[red]Ошибка команды: {e}[/red]")
             else:
                 console.print(f"[dim]Команда не найдена: {raw}[/dim]")
         else:
-            _handle_chat(raw, ctx, mgr, session_id, model_name, cfg)
+            if not cfg.has_any_provider():
+                console.print(
+                    "[yellow]Нет API-ключа. Добавь через /OpenRouter API или /Favorite API.[/yellow]"
+                )
+            else:
+                _handle_chat(raw, ctx, mgr, session_id, cfg)
 
     console.print("\n[dim]До встречи. Сессия сохранена.[/dim]")
 
 
 def _handle_chat(
     text: str, ctx: CommandContext, mgr: SessionManager,
-    session_id: str, model_name: str, cfg
+    session_id: str, cfg,
 ) -> None:
     from .ui.spinner import Spinner
     spinner = Spinner()
     spinner.start()
     try:
-        response = _call_llm(text, model_name, cfg)
+        response = _call_llm(text, cfg)
     except Exception as e:
         spinner.stop()
         console.print(f"[red]Ошибка API: {e}[/red]")
@@ -165,28 +183,44 @@ def _handle_chat(
     mgr.append_history(session_id, {"type": "agent", "content": response})
 
 
-def _call_llm(text: str, model: str, cfg) -> str:
+def _call_llm(text: str, cfg) -> str:
     import requests as req
-    key_data = cfg.default_openrouter_key()
-    if not key_data:
-        return "Нет API-ключа. Добавь ключ через /OpenRouter API."
-    headers = {
-        "Authorization": f"Bearer {key_data['key']}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/animebyst07-stack/FavoriteCLI",
-        "X-Title": "FavoriteCLI",
-    }
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": text}],
-    }
-    r = req.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers=headers,
-        json=body,
-        timeout=60,
-    )
-    data = r.json()
-    if "error" in data:
-        raise RuntimeError(data["error"].get("message", str(data["error"])))
-    return data["choices"][0]["message"]["content"]
+
+    or_key = cfg.default_openrouter_key()
+    if or_key:
+        headers = {
+            "Authorization": f"Bearer {or_key['key']}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/animebyst07-stack/FavoriteCLI",
+            "X-Title": "FavoriteCLI",
+        }
+        body = {
+            "model": or_key.get("model", "qwen/qwen3-coder:free"),
+            "messages": [{"role": "user", "content": text}],
+        }
+        r = req.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers, json=body, timeout=60,
+        )
+        data = r.json()
+        if "error" in data:
+            raise RuntimeError(data["error"].get("message", str(data["error"])))
+        return data["choices"][0]["message"]["content"]
+
+    fav = cfg.default_favorite_key()
+    if fav:
+        headers = {
+            "Authorization": f"Bearer {fav['key']}",
+            "Content-Type": "application/json",
+        }
+        body = {"messages": [{"role": "user", "content": text}]}
+        if fav.get("model"):
+            body["model"] = fav["model"]
+        r = req.post(
+            f"{cfg.favorite_api_base_url}/api/v1/chat",
+            headers=headers, json=body, timeout=90,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+
+    raise RuntimeError("Нет доступного провайдера.")
