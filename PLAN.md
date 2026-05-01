@@ -30,6 +30,8 @@ GitHub: https://github.com/animebyst07-stack/FavoriteCLI
 - [x] `Favorite.md` — системный промпт AI (постоянная память)
 - [x] `README.md`, `requirements.txt`
 - [x] Все API-ключи убраны из кода — вводятся только через CLI
+- [x] CLI запускается сразу без принудительного мастера настройки
+- [x] Выбор модели — numbered меню (бесплатные подтягиваются с OpenRouter по ключу, платные — кураторский список)
 
 ---
 
