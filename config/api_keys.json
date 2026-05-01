@@ -1,22 +1,6 @@
 {
-  "favorite_api": [
-    {
-      "key": "fa_sk_eecb060896fe1ad8aaa5fcbde66d7ca7d40d304bd874f6dd453981d7a4467964",
-      "label": "default",
-      "model": null,
-      "role": null,
-      "is_default": true
-    }
-  ],
-  "openrouter": [
-    {
-      "key": "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",
-      "label": "default",
-      "model": "qwen/qwen3-coder:free",
-      "role": "main",
-      "is_default": true
-    }
-  ],
-  "void_ai": "sk-va-unified-8bde13ae998fd5501ecf356f19505d6b9c227e2902f9b8947a1de3698d1cab5c",
+  "favorite_api": [],
+  "openrouter": [],
+  "void_ai": "",
   "favorite_api_base_url": "http://127.0.0.1:5005"
 }
