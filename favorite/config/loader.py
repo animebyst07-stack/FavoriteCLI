@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 _BASE = Path(__file__).resolve().parent.parent.parent
@@ -23,6 +22,7 @@ class Config:
         self._keys = _load("api_keys.json")
         self._github = _load("github.json")
 
+    # --- GitHub ---
     @property
     def github_token(self) -> str:
         return self._github.get("token", "")
@@ -33,28 +33,83 @@ class Config:
 
     @property
     def github_repo(self) -> str:
-        return self._github.get("repo", "")
+        return self._github.get("repo", "FavoriteCLI")
 
     @property
     def github_branch(self) -> str:
         return self._github.get("branch", "main")
 
+    def set_github(self, token: str, owner: str, repo: str = "FavoriteCLI", branch: str = "main") -> None:
+        self._github = {"token": token, "owner": owner, "repo": repo, "branch": branch}
+        _save("github.json", self._github)
+
+    # --- FavoriteAPI ---
     @property
     def favorite_api_keys(self) -> list[dict]:
         return self._keys.get("favorite_api", [])
 
+    def add_favorite_key(self, key: str, label: str = "", model: str | None = None) -> None:
+        keys = self._keys.setdefault("favorite_api", [])
+        is_first = len(keys) == 0
+        keys.append({"key": key, "label": label or f"key{len(keys)+1}",
+                     "model": model, "role": None, "is_default": is_first})
+        _save("api_keys.json", self._keys)
+
+    def remove_favorite_key(self, idx: int) -> bool:
+        keys = self._keys.get("favorite_api", [])
+        if 0 <= idx < len(keys):
+            keys.pop(idx)
+            _save("api_keys.json", self._keys)
+            return True
+        return False
+
+    # --- OpenRouter ---
     @property
     def openrouter_keys(self) -> list[dict]:
         return self._keys.get("openrouter", [])
 
+    def add_openrouter_key(self, key: str, label: str = "", model: str = "qwen/qwen3-coder:free") -> None:
+        keys = self._keys.setdefault("openrouter", [])
+        is_first = len(keys) == 0
+        keys.append({"key": key, "label": label or f"key{len(keys)+1}",
+                     "model": model, "role": "main" if is_first else None, "is_default": is_first})
+        _save("api_keys.json", self._keys)
+
+    def remove_openrouter_key(self, idx: int) -> bool:
+        keys = self._keys.get("openrouter", [])
+        if 0 <= idx < len(keys):
+            keys.pop(idx)
+            _save("api_keys.json", self._keys)
+            return True
+        return False
+
+    def set_openrouter_model(self, idx: int, model: str) -> bool:
+        keys = self._keys.get("openrouter", [])
+        if 0 <= idx < len(keys):
+            keys[idx]["model"] = model
+            _save("api_keys.json", self._keys)
+            return True
+        return False
+
+    # --- VoidAI ---
     @property
     def void_ai_key(self) -> str:
         return self._keys.get("void_ai", "")
 
+    def set_void_ai_key(self, key: str) -> None:
+        self._keys["void_ai"] = key
+        _save("api_keys.json", self._keys)
+
+    # --- FavoriteAPI base URL ---
     @property
     def favorite_api_base_url(self) -> str:
         return self._keys.get("favorite_api_base_url", "http://127.0.0.1:5005")
 
+    def set_favorite_api_base_url(self, url: str) -> None:
+        self._keys["favorite_api_base_url"] = url
+        _save("api_keys.json", self._keys)
+
+    # --- Helpers ---
     def default_openrouter_key(self) -> dict | None:
         for k in self.openrouter_keys:
             if k.get("is_default"):
@@ -67,8 +122,8 @@ class Config:
                 return k
         return self.favorite_api_keys[0] if self.favorite_api_keys else None
 
-    def save_keys(self) -> None:
-        _save("api_keys.json", self._keys)
+    def has_any_provider(self) -> bool:
+        return bool(self.openrouter_keys or self.favorite_api_keys)
 
 
 _cfg: Config | None = None
@@ -77,4 +132,9 @@ def get_config() -> Config:
     global _cfg
     if _cfg is None:
         _cfg = Config()
+    return _cfg
+
+def reload_config() -> Config:
+    global _cfg
+    _cfg = Config()
     return _cfg
