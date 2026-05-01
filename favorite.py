@@ -3,7 +3,11 @@
 FavoriteCLI — CLI AI-agent for Termux/Android.
 Entry point. Run: python favorite.py
 """
+import os
 import sys
+
+# Фикс дублирования ввода в Termux/Android
+os.environ.setdefault("TERM", "xterm-256color")
 
 
 def main():
