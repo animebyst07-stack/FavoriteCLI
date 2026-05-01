@@ -87,6 +87,17 @@ def build_session() -> PromptSession:
         # Escape просто сбрасывает текущий ввод, не выходит
         event.app.current_buffer.reset()
 
+    @kb.add("backspace")
+    def _backspace_and_complete(event):
+        buf = event.app.current_buffer
+        # Закрываем текущее меню если открыто
+        if buf.complete_state:
+            buf.cancel_completion()
+        buf.delete_before_cursor(count=1)
+        # Переоткрываем подсказки если ещё в slash-команде
+        if buf.text.startswith("/") and len(buf.text) >= 1:
+            buf.start_completion(select_first=False)
+
     return PromptSession(
         completer=SlashCompleter(),
         style=STYLE,
