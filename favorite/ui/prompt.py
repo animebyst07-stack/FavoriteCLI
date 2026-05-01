@@ -66,11 +66,12 @@ class SlashCompleter(Completer):
 
 
 def _highlight(cmd: str, partial: str) -> HTML:
+    """Подсвечивает совпадающую часть оранжевым."""
     low_cmd, low_partial = cmd.lower(), partial.lower()
     result, i = "", 0
     while i < len(cmd):
         if low_partial and low_cmd[i:i+len(low_partial)] == low_partial:
-            result += f"<ansiyellow><b>{cmd[i:i+len(low_partial)]}</b></ansiyellow>"
+            result += f"<style fg='#ff8c00'><b>{cmd[i:i+len(low_partial)]}</b></style>"
             i += len(low_partial)
         else:
             result += cmd[i]
