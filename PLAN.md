@@ -37,6 +37,7 @@ GitHub: https://github.com/animebyst07-stack/FavoriteCLI
 - [x] ux: убрана нижняя панель "? for shortcuts | esc to stop"
 - [x] ux: весь контент welcome-панели выровнен по центру
 - [x] ux: переработан pixel-art персонаж — симметричный, каждая строка одинаковой ширины
+- [x] ux: баннер переработан — 3 варианта в theme.py (A: линии, B: ◆ акцент, C: блоки), активный LOGO_ART_A
 
 ---
 
