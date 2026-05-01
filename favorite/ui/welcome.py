@@ -1,3 +1,4 @@
+import os
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -8,32 +9,38 @@ from .theme import ORANGE, WHITE, GRAY, LOGO_ART
 console = Console()
 
 
-def render_welcome(model_name: str, workdir: str) -> None:
-    logo = Text(LOGO_ART, style=f"bold {ORANGE}")
+def clear_screen() -> None:
+    os.system("clear")
 
-    content = Text()
+
+def render_welcome(model_name: str, workdir: str) -> None:
+    # Укорачиваем путь если не влезает
+    max_path = 44
+    display_path = workdir if len(workdir) <= max_path else "…" + workdir[-(max_path - 1):]
+
+    content = Text(justify="center")
+    content.append("\nWelcome back!\n", style=f"bold {WHITE}")
     content.append("\n")
-    content.append("        Welcome back!\n", style=f"bold {WHITE}")
+    content.append(LOGO_ART, style=f"bold {ORANGE}")
+    content.append("\n\n")
+    content.append(model_name, style=f"bold {ORANGE}")
     content.append("\n")
-    content.append(LOGO_ART + "\n", style=f"bold {ORANGE}")
-    content.append("\n")
-    content.append(f"   {model_name}\n", style=f"{ORANGE}")
-    content.append("    API Usage Billing\n", style=f"{GRAY}")
-    content.append(f" {workdir}\n", style=f"{GRAY}")
+    content.append(display_path, style=GRAY)
     content.append("\n")
 
     panel = Panel(
         content,
         title="[bold #ff8c00]Favorite Code[/bold #ff8c00]",
         border_style=f"bold {ORANGE}",
-        expand=False,
-        width=58,
+        padding=(0, 2),
+        width=54,
     )
     console.print(Align.center(panel))
+    console.print()
 
 
 def render_separator() -> None:
-    console.print("\u2500" * 56, style=f"{GRAY}")
+    console.print("\u2500" * 50, style=GRAY)
 
 
 def print_agent_dot(text: str) -> None:
@@ -50,4 +57,4 @@ def print_error(text: str) -> None:
 
 
 def print_info(text: str) -> None:
-    console.print(f"[dim]{text}[/dim]")
+    console.print(text)
