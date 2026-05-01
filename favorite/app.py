@@ -8,9 +8,9 @@ from rich.console import Console
 
 from .platform import detect_platform
 from .config.loader import get_config
-from .ui.welcome import render_welcome
+from .ui.welcome import render_welcome, clear_screen
 from .ui.chat import print_agent_message, print_separator
-from .ui.prompt import build_session, BOTTOM_TOOLBAR, get_prompt_tokens
+from .ui.prompt import build_session, get_prompt_tokens
 from .ui.theme import STYLE
 from .sessions.manager import SessionManager
 from .commands.registry import CommandRegistry
@@ -65,6 +65,20 @@ def _build_registry() -> CommandRegistry:
     return reg
 
 
+def _show_home(model_name: str, workdir: str, cfg) -> None:
+    """Очищает экран и рисует главный экран."""
+    clear_screen()
+    render_welcome(model_name=model_name, workdir=workdir)
+    if not cfg.has_any_provider():
+        console.print(
+            "  [dim]Ключи не настроены. Добавь через [/dim]"
+            "[bold #ff8c00]/OpenRouter API[/bold #ff8c00]"
+            "[dim] или [/dim]"
+            "[bold #ff8c00]/Favorite API[/bold #ff8c00]\n"
+        )
+    console.print("[dim]Введи сообщение или / для команд. Ctrl+C — выход.[/dim]\n")
+
+
 def run() -> None:
     platform = detect_platform()
     cfg = get_config()
@@ -80,16 +94,6 @@ def run() -> None:
         fav = cfg.default_favorite_key()
         model_name = ("FavoriteAPI/" + (fav.get("model") or "default")) if fav else "нет ключей"
 
-    render_welcome(model_name=model_name, workdir=workdir)
-
-    if not cfg.has_any_provider():
-        console.print(
-            "[dim]Ключи не настроены. Добавь через [/dim]"
-            "[bold #ff8c00]/OpenRouter API[/bold #ff8c00]"
-            "[dim] или [/dim]"
-            "[bold #ff8c00]/Favorite API[/bold #ff8c00]\n"
-        )
-
     registry = _build_registry()
     ctx = CommandContext(
         workdir=workdir,
@@ -100,22 +104,15 @@ def run() -> None:
 
     session = build_session()
 
-    console.print("[dim]Введи сообщение или / для команд. Ctrl+C — выход.[/dim]\n")
+    _show_home(model_name, workdir, cfg)
 
     while True:
         try:
-            raw = session.prompt(
-                get_prompt_tokens,
-                style=STYLE,
-                bottom_toolbar=BOTTOM_TOOLBAR,
-            )
+            raw = session.prompt(get_prompt_tokens, style=STYLE)
         except KeyboardInterrupt:
             console.print("\n[dim]Ctrl+C — нажми ещё раз для выхода.[/dim]")
             try:
-                session.prompt(
-                    [("class:prompt-arrow", "\u276f ")],
-                    style=STYLE,
-                )
+                session.prompt([("class:prompt-arrow", "\u276f ")], style=STYLE)
             except (KeyboardInterrupt, EOFError):
                 break
             continue
@@ -140,22 +137,25 @@ def run() -> None:
                     break
             if matched_cmd:
                 try:
+                    clear_screen()
                     matched_cmd.execute(matched_args, ctx)
                 except Exception as e:
                     console.print(f"[red]Ошибка команды: {e}[/red]")
+                # Возвращаемся на главный экран после команды
+                _show_home(model_name, workdir, cfg)
             else:
                 console.print(f"[dim]Команда не найдена: {raw}[/dim]")
         else:
             if not cfg.has_any_provider():
                 console.print(
                     "[yellow]Нет API-ключа.[/yellow] "
-                    "Добавь через [bold #ff8c00]/OpenRouter API[/bold #ff8c00] "
-                    "или [bold #ff8c00]/Favorite API[/bold #ff8c00]"
+                    "Добавь через [bold #ff8c00]/OpenRouter API[/bold #ff8c00]"
                 )
             else:
                 _handle_chat(raw, ctx, mgr, session_id, cfg)
 
-    console.print("\n[dim]До встречи. Сессия сохранена.[/dim]")
+    clear_screen()
+    console.print("\n[dim]До встречи.[/dim]\n")
 
 
 def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
