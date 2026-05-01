@@ -21,6 +21,13 @@ _CURATED_MODELS = [
 ]
 
 
+def _fmt_ctx(ctx_k: int) -> str:
+    """Форматирует контекст: 1000k → 1M, 128k → 128k и т.д."""
+    if ctx_k >= 1000 and ctx_k % 1000 == 0:
+        return f"{ctx_k // 1000}M"
+    return f"{ctx_k}k"
+
+
 def _pick_model_menu(key_val: str) -> str:
     """Показывает numbered меню моделей. Возвращает model_id."""
 
@@ -34,13 +41,13 @@ def _pick_model_menu(key_val: str) -> str:
         print_info("  [dim]— Бесплатные (актуально с OpenRouter) —[/dim]")
         items = live_free[:10]
         for i, (name, mid, ctx) in enumerate(items, 1):
-            print_info(f"  [{i:>2}] {name:<38} {ctx}k ctx  [green]бесплатно[/green]")
+            print_info(f"  [{i:>2}] {name:<38} {_fmt_ctx(ctx)} ctx  [green]бесплатно[/green]")
         offset = len(items) + 1
         print_info("")
         print_info("  [dim]— Платные (кураторский список) —[/dim]")
         paid = [(n, m, c) for n, m, c, free in _CURATED_MODELS if not free and m != "__custom__"]
         for j, (name, mid, ctx) in enumerate(paid, offset):
-            print_info(f"  [{j:>2}] {name:<38} {ctx}k ctx")
+            print_info(f"  [{j:>2}] {name:<38} {_fmt_ctx(ctx)} ctx")
         all_models = [(n, m, c) for n, m, c in items] + paid
         custom_n = len(all_models) + 1
         print_info(f"  [{custom_n:>2}] Другая (ввести вручную)")
@@ -50,7 +57,7 @@ def _pick_model_menu(key_val: str) -> str:
                 print_info(f"  [{i:>2}] {name}")
                 continue
             badge = "[green]бесплатно[/green]" if free else ""
-            print_info(f"  [{i:>2}] {name:<38} {ctx}k ctx  {badge}")
+            print_info(f"  [{i:>2}] {name:<38} {_fmt_ctx(ctx)} ctx  {badge}")
         all_models = [(n, m, c) for n, m, c, _ in _CURATED_MODELS if m != "__custom__"]
         custom_n = len(_CURATED_MODELS)
 
