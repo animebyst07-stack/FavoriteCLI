@@ -167,11 +167,24 @@ def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
         response = _call_llm(text, cfg)
     except _req.exceptions.ConnectionError:
         spinner.stop()
+        current_url = cfg.favorite_api_base_url
         console.print(
-            "[bold red]FavoriteAPI сервер не запущен.[/bold red] "
-            "[dim]Запусти в другом терминале:[/dim] "
-            "[bold #ff8c00]python api.py[/bold #ff8c00]"
+            f"[bold red]Не удалось подключиться к FavoriteAPI.[/bold red] "
+            f"[dim]Текущий адрес: [/dim][#ff8c00]{current_url}[/#ff8c00]"
         )
+        console.print(
+            "[dim]Введи новый URL сервера и нажми Enter "
+            "(или просто Enter чтобы пропустить):[/dim]"
+        )
+        try:
+            new_url = input("  URL: ").strip()
+            if new_url:
+                if not new_url.startswith("http"):
+                    new_url = "http://" + new_url
+                cfg.set_favorite_api_base_url(new_url)
+                console.print(f"[green]Сохранено:[/green] {new_url}. Повтори сообщение.")
+        except (EOFError, KeyboardInterrupt):
+            pass
         return
     except Exception as e:
         spinner.stop()
