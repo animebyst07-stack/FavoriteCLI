@@ -1,16 +1,27 @@
 from prompt_toolkit.styles import Style
 
 STYLE = Style.from_dict({
+    # Промпт
+    "prompt-arrow":   "#ffffff bold",
+
+    # Completion menu — тёмный фон, белый текст, оранжевый выбор
+    "completion-menu":                        "bg:#1a1a1a #cccccc",
+    "completion-menu.completion":             "bg:#1a1a1a #cccccc",
+    "completion-menu.completion.current":     "bg:#2a1800 #ff8c00 bold",
+    "completion-menu.meta.completion":        "bg:#111111 #666666",
+    "completion-menu.meta.completion.current":"bg:#2a1800 #ff8c00",
+    "scrollbar.background":                   "bg:#222222",
+    "scrollbar.button":                       "bg:#ff8c00",
+
+    # Остальные элементы
     "frame":          "#ff8c00",
     "frame-title":    "#ff8c00 bold",
-    "prompt-arrow":   "#ffffff bold",
     "agent-dot":      "#ff8c00 bold",
     "step-prefix":    "#888888",
     "step-text":      "#aaaaaa",
     "thinking":       "#888888 italic",
     "slash-match":    "#ff8c00 bold",
-    "slash-item":     "#ffffff",
-    "slash-selected": "bg:#333300 #ff8c00",
+    "slash-item":     "#cccccc",
     "status-bar":     "bg:#1a1a1a #666666",
     "header-orange":  "#ff8c00",
     "header-white":   "#ffffff",
