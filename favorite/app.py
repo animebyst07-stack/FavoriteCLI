@@ -2,6 +2,7 @@
 FavoriteCLI — main application entry point (DI container + run loop).
 """
 import os
+import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -180,14 +181,50 @@ def run() -> None:
     console.print("\n[dim]До встречи.[/dim]\n")
 
 
-def _handle_chat(text: str, messages: list[dict], ctx, mgr, session_id: str, cfg) -> None:
+def _handle_chat(
+    text: str,
+    messages: list[dict],
+    ctx,
+    mgr,
+    session_id: str,
+    cfg,
+) -> None:
+    from .agent.llm import call_llm, stream_llm
     from .ui.spinner import Spinner
     import requests as _req
 
+    or_key = cfg.default_openrouter_key()
+
+    if or_key:
+        # --- Streaming path (OpenRouter) ---
+        console.print()
+        console.print("  [bold #ff8c00]●[/bold #ff8c00] ", end="")
+        full = ""
+        try:
+            for chunk in stream_llm(messages, cfg):
+                sys.stdout.write(chunk)
+                sys.stdout.flush()
+                full += chunk
+        except KeyboardInterrupt:
+            console.print("\n[dim](прервано)[/dim]")
+            if full:
+                _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
+            return
+        except _req.exceptions.ConnectionError:
+            console.print(f"\n[bold red]Не удалось подключиться к OpenRouter.[/bold red]")
+            return
+        except Exception as e:
+            console.print(f"\n[red]Ошибка API: {e}[/red]")
+            return
+        console.print("\n")
+        _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
+        return
+
+    # --- Blocking path (FavoriteAPI via spinner) ---
     spinner = Spinner()
     spinner.start()
     try:
-        response = _call_llm(messages, cfg)
+        response = call_llm(messages, cfg)
     except _req.exceptions.ConnectionError:
         spinner.stop()
         current_url = cfg.favorite_api_base_url
@@ -202,7 +239,7 @@ def _handle_chat(text: str, messages: list[dict], ctx, mgr, session_id: str, cfg
                 spin2 = Spinner()
                 spin2.start()
                 try:
-                    response = _call_llm(messages, cfg)
+                    response = call_llm(messages, cfg)
                     spin2.stop()
                     _agent_loop(response, messages, ctx, mgr, session_id, cfg)
                     return
@@ -239,29 +276,39 @@ def _agent_loop(
     mgr,
     session_id: str,
     cfg,
+    skip_first_print: bool = False,
 ) -> None:
     from .agent.tags import extract_tags, strip_tags
     from .agent.executor import execute_tags_with_output
+    from .agent.llm import call_llm
     from .ui.spinner import Spinner
 
     all_responses: list[str] = []
     response = first_response
+    step = 0
 
     while True:
         tags = extract_tags(response)
         clean = strip_tags(response) if tags else response
 
-        if clean.strip():
+        # Print only if not already streamed to screen
+        if clean.strip() and not (step == 0 and skip_first_print):
             print_agent_message(clean)
 
         all_responses.append(response)
+        step += 1
 
         if not tags:
             break
 
         tool_output = execute_tags_with_output(tags, ctx, cfg)
 
-        has_actions = any(t.name.upper() in ("SHELL_RAW", "SKILL") for t in tags)
+        # Continue loop if: has actionable tags AND produced output
+        # CONTINUE tag always produces output (at least "[continue]")
+        has_actions = any(
+            t.name.upper() in ("SHELL_RAW", "SKILL", "CONTINUE", "POLL")
+            for t in tags
+        )
         if not has_actions or not tool_output:
             break
 
@@ -271,8 +318,12 @@ def _agent_loop(
         spinner = Spinner()
         spinner.start()
         try:
-            response = _call_llm(messages, cfg)
+            response = call_llm(messages, cfg)
             spinner.stop()
+        except KeyboardInterrupt:
+            spinner.stop()
+            console.print("\n[dim](прервано пользователем)[/dim]")
+            break
         except Exception as e:
             spinner.stop()
             console.print(f"[red]Ошибка API (шаг агента): {e}[/red]")
@@ -280,46 +331,3 @@ def _agent_loop(
 
     final = "\n".join(all_responses)
     mgr.append_history(session_id, {"type": "agent", "content": final})
-
-
-def _call_llm(messages: list[dict], cfg) -> str:
-    import requests as req
-
-    or_key = cfg.default_openrouter_key()
-    if or_key:
-        headers = {
-            "Authorization": f"Bearer {or_key['key']}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/animebyst07-stack/FavoriteCLI",
-            "X-Title": "FavoriteCLI",
-        }
-        body = {
-            "model": or_key.get("model", "qwen/qwen3-coder:free"),
-            "messages": messages,
-        }
-        r = req.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers, json=body, timeout=60,
-        )
-        data = r.json()
-        if "error" in data:
-            raise RuntimeError(data["error"].get("message", str(data["error"])))
-        return data["choices"][0]["message"]["content"]
-
-    fav = cfg.default_favorite_key()
-    if fav:
-        headers = {
-            "Authorization": f"Bearer {fav['key']}",
-            "Content-Type": "application/json",
-        }
-        body = {"messages": messages}
-        if fav.get("model"):
-            body["model"] = fav["model"]
-        r = req.post(
-            f"{cfg.favorite_api_base_url}/api/v1/chat",
-            headers=headers, json=body, timeout=90,
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
-
-    raise RuntimeError("Нет доступного провайдера.")
