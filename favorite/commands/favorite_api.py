@@ -28,6 +28,8 @@ class FavoriteApiCommand(ICommand):
             print_info("  [1] Добавить ключ")
             print_info("  [2] Удалить ключ")
             print_info("  [3] Изменить адрес сервера")
+            bridge_status = "настроен" if cfg.has_tg_bridge() else "не настроен"
+            print_info(f"  [4] Telegram-мост  ({bridge_status})")
             print_info(f"  [0] Назад  (сервер: {cfg.favorite_api_base_url})")
             try:
                 choice = input("  Выбери: ").strip()
@@ -66,3 +68,18 @@ class FavoriteApiCommand(ICommand):
                 if url:
                     cfg.set_favorite_api_base_url(url)
                     print_info(f"  Адрес обновлён: {url}")
+              elif choice == "4":
+                  print_info("  TG-мост: при потере связи CLI сам найдёт новый URL через Telegram.")
+                  print_info("  Токен бота и Chat ID — те же что в .env FavoriteAPI (TG_NOTIFY_TOKEN, TG_NOTIFY_CHATS).")
+                  try:
+                      cur_tok = cfg.tg_bridge_token
+                      cur_cid = cfg.tg_bridge_chat_id
+                      tg_tok = input(f"  Токен бота [{cur_tok[:8]+'...' if cur_tok else 'нет'}]: ").strip()
+                      tg_cid = input(f"  Chat ID [{cur_cid or 'нет'}]: ").strip()
+                  except (EOFError, KeyboardInterrupt):
+                      continue
+                  if tg_tok and tg_cid:
+                      cfg.set_tg_bridge(tg_tok, tg_cid)
+                      print_info("  Мост сохранён. Следующий обрыв — URL подтянется автоматически.")
+                  else:
+                      print_info("  Отменено (нужны оба поля).")
