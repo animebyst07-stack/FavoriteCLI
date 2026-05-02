@@ -28,7 +28,6 @@ console = Console()
 
 
 def _get_model_name(cfg) -> str:
-    """Возвращает актуальное имя модели/провайдера из конфига."""
     or_key = cfg.default_openrouter_key()
     name = (or_key or {}).get("model", None)
     if not name:
@@ -76,7 +75,6 @@ def _build_registry() -> CommandRegistry:
 
 
 def _show_home(workdir: str) -> None:
-    """Перечитывает конфиг, очищает экран, рисует главный экран с актуальным статусом."""
     cfg = reload_config()
     model_name = _get_model_name(cfg)
     clear_screen()
@@ -91,14 +89,37 @@ def _show_home(workdir: str) -> None:
     console.print("[dim]Введи сообщение или / для команд. Ctrl+C — выход.[/dim]\n")
 
 
+def _load_system_prompt(workdir: str) -> str:
+    """Читает Favorite.md из рабочей директории как системный промпт."""
+    try:
+        from .memory.favorite_md import FavoriteMd
+        fmd = FavoriteMd(workdir)
+        return fmd.read() or ""
+    except Exception:
+        return ""
+
+
+def _build_messages(text: str, history: list[dict], system_prompt: str) -> list[dict]:
+    """Собирает messages[] из системного промпта + истории + нового сообщения."""
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    for entry in history[-20:]:
+        role = entry.get("type", "")
+        content = entry.get("content", "")
+        if role == "user":
+            messages.append({"role": "user", "content": content})
+        elif role in ("agent", "assistant"):
+            messages.append({"role": "assistant", "content": content})
+    messages.append({"role": "user", "content": text})
+    return messages
+
+
 def run() -> None:
     platform = detect_platform()
-
     workdir = _pick_workdir()
-
     mgr = SessionManager()
     session_id = mgr.create_session(workdir=workdir)
-
     registry = _build_registry()
     ctx = CommandContext(
         workdir=workdir,
@@ -106,9 +127,7 @@ def run() -> None:
         platform=platform,
         config=get_config(),
     )
-
     session = build_session()
-
     _show_home(workdir)
 
     while True:
@@ -155,19 +174,23 @@ def run() -> None:
                     "Добавь через [bold #ff8c00]/OpenRouter API[/bold #ff8c00]"
                 )
             else:
-                _handle_chat(raw, ctx, mgr, session_id, cfg)
+                history = mgr.load_history(session_id)
+                system_prompt = _load_system_prompt(workdir)
+                messages = _build_messages(raw, history[:-1], system_prompt)
+                _handle_chat(raw, messages, ctx, mgr, session_id, cfg)
 
     clear_screen()
     console.print("\n[dim]До встречи.[/dim]\n")
 
 
-def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
+def _handle_chat(text: str, messages: list[dict], ctx, mgr, session_id: str, cfg) -> None:
     from .ui.spinner import Spinner
     import requests as _req
+
     spinner = Spinner()
     spinner.start()
     try:
-        response = _call_llm(text, cfg)
+        response = _call_llm(messages, cfg)
     except _req.exceptions.ConnectionError:
         spinner.stop()
         current_url = cfg.favorite_api_base_url
@@ -182,10 +205,9 @@ def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
                 spin2 = Spinner()
                 spin2.start()
                 try:
-                    response = _call_llm(text, cfg)
+                    response = _call_llm(messages, cfg)
                     spin2.stop()
-                    print_agent_message(response)
-                    mgr.append_history(session_id, {"type": "agent", "content": response})
+                    _finish_chat(response, text, ctx, mgr, session_id, cfg)
                     return
                 except Exception:
                     spin2.stop()
@@ -208,12 +230,27 @@ def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
         spinner.stop()
         console.print(f"[red]Ошибка API: {e}[/red]")
         return
+
     spinner.stop()
-    print_agent_message(response)
+    _finish_chat(response, text, ctx, mgr, session_id, cfg)
+
+
+def _finish_chat(response: str, text: str, ctx, mgr, session_id: str, cfg) -> None:
+    """Показывает ответ, запускает теги, сохраняет историю."""
+    from .agent.tags import extract_tags, strip_tags
+    from .agent.executor import execute_tags
+
+    tags = extract_tags(response)
+    clean = strip_tags(response) if tags else response
+    print_agent_message(clean)
+
+    if tags:
+        execute_tags(tags, ctx, cfg)
+
     mgr.append_history(session_id, {"type": "agent", "content": response})
 
 
-def _call_llm(text: str, cfg) -> str:
+def _call_llm(messages: list[dict], cfg) -> str:
     import requests as req
 
     or_key = cfg.default_openrouter_key()
@@ -226,7 +263,7 @@ def _call_llm(text: str, cfg) -> str:
         }
         body = {
             "model": or_key.get("model", "qwen/qwen3-coder:free"),
-            "messages": [{"role": "user", "content": text}],
+            "messages": messages,
         }
         r = req.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -243,7 +280,7 @@ def _call_llm(text: str, cfg) -> str:
             "Authorization": f"Bearer {fav['key']}",
             "Content-Type": "application/json",
         }
-        body = {"messages": [{"role": "user", "content": text}]}
+        body = {"messages": messages}
         if fav.get("model"):
             body["model"] = fav["model"]
         r = req.post(
