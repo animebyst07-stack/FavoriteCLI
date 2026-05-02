@@ -26,6 +26,8 @@ from .commands.base import CommandContext
 
 console = Console()
 
+_MAX_AGENT_STEPS = 8
+
 
 def _get_model_name(cfg) -> str:
     or_key = cfg.default_openrouter_key()
@@ -90,18 +92,15 @@ def _show_home(workdir: str) -> None:
 
 
 def _load_system_prompt(workdir: str) -> str:
-    """Читает Favorite.md из корня FavoriteCLI как системный промпт."""
     try:
         from .memory.favorite_md import FavoriteMd
-        fmd = FavoriteMd()
-        return fmd.read() or ""
+        return FavoriteMd().read() or ""
     except Exception:
         return ""
 
 
 def _build_messages(text: str, history: list[dict], system_prompt: str) -> list[dict]:
-    """Собирает messages[] из системного промпта + истории + нового сообщения."""
-    messages = []
+    messages: list[dict] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     for entry in history[-20:]:
@@ -207,7 +206,7 @@ def _handle_chat(text: str, messages: list[dict], ctx, mgr, session_id: str, cfg
                 try:
                     response = _call_llm(messages, cfg)
                     spin2.stop()
-                    _finish_chat(response, text, ctx, mgr, session_id, cfg)
+                    _agent_loop(response, messages, ctx, mgr, session_id, cfg)
                     return
                 except Exception:
                     spin2.stop()
@@ -232,22 +231,57 @@ def _handle_chat(text: str, messages: list[dict], ctx, mgr, session_id: str, cfg
         return
 
     spinner.stop()
-    _finish_chat(response, text, ctx, mgr, session_id, cfg)
+    _agent_loop(response, messages, ctx, mgr, session_id, cfg)
 
 
-def _finish_chat(response: str, text: str, ctx, mgr, session_id: str, cfg) -> None:
-    """Показывает ответ, запускает теги, сохраняет историю."""
+def _agent_loop(
+    first_response: str,
+    messages: list[dict],
+    ctx,
+    mgr,
+    session_id: str,
+    cfg,
+) -> None:
     from .agent.tags import extract_tags, strip_tags
-    from .agent.executor import execute_tags
+    from .agent.executor import execute_tags_with_output
+    from .ui.spinner import Spinner
 
-    tags = extract_tags(response)
-    clean = strip_tags(response) if tags else response
-    print_agent_message(clean)
+    all_responses: list[str] = []
+    response = first_response
 
-    if tags:
-        execute_tags(tags, ctx, cfg)
+    for _step in range(_MAX_AGENT_STEPS):
+        tags = extract_tags(response)
+        clean = strip_tags(response) if tags else response
 
-    mgr.append_history(session_id, {"type": "agent", "content": response})
+        if clean.strip():
+            print_agent_message(clean)
+
+        all_responses.append(response)
+
+        if not tags:
+            break
+
+        tool_output = execute_tags_with_output(tags, ctx, cfg)
+
+        has_actions = any(t.name.upper() in ("SHELL_RAW", "SKILL") for t in tags)
+        if not has_actions or not tool_output:
+            break
+
+        messages.append({"role": "assistant", "content": response})
+        messages.append({"role": "user", "content": f"[tool output]\n{tool_output}"})
+
+        spinner = Spinner()
+        spinner.start()
+        try:
+            response = _call_llm(messages, cfg)
+            spinner.stop()
+        except Exception as e:
+            spinner.stop()
+            console.print(f"[red]Ошибка API (шаг агента): {e}[/red]")
+            break
+
+    final = "\n".join(all_responses)
+    mgr.append_history(session_id, {"type": "agent", "content": final})
 
 
 def _call_llm(messages: list[dict], cfg) -> str:
