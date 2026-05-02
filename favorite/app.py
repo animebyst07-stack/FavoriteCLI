@@ -169,41 +169,41 @@ def _handle_chat(text, ctx, mgr, session_id, cfg) -> None:
     try:
         response = _call_llm(text, cfg)
     except _req.exceptions.ConnectionError:
-          spinner.stop()
-          current_url = cfg.favorite_api_base_url
-          if cfg.has_tg_bridge():
-              console.print("[dim]Ищу URL через Telegram-мост...[/dim]")
-              from .bridge.tg_url import fetch_url, invalidate
-              invalidate()
-              fresh_url = fetch_url(cfg.tg_bridge_token, cfg.tg_bridge_chat_id)
-              if fresh_url and fresh_url != current_url:
-                  cfg.set_favorite_api_base_url(fresh_url)
-                  console.print(f"[dim]Новый URL: {fresh_url} — повторяю...[/dim]")
-                  spin2 = Spinner()
-                  spin2.start()
-                  try:
-                      response = _call_llm(text, cfg)
-                      spin2.stop()
-                      print_agent_message(response)
-                      mgr.append_history(session_id, {"type": "agent", "content": response})
-                      return
-                  except Exception:
-                      spin2.stop()
-          console.print(
-              f"[bold red]Не удалось подключиться к FavoriteAPI.[/bold red] "
-              f"[dim]Текущий адрес: [/dim][#ff8c00]{current_url}[/#ff8c00]"
-          )
-          console.print("[dim]Введи новый URL (или Enter чтобы пропустить):[/dim]")
-          try:
-              new_url = input("  URL: ").strip()
-              if new_url:
-                  if not new_url.startswith("http"):
-                      new_url = "http://" + new_url
-                  cfg.set_favorite_api_base_url(new_url)
-                  console.print(f"[green]Сохранено:[/green] {new_url}. Повтори сообщение.")
-          except (EOFError, KeyboardInterrupt):
-              pass
-          return
+        spinner.stop()
+        current_url = cfg.favorite_api_base_url
+        if cfg.has_tg_bridge():
+            console.print("[dim]Ищу URL через Telegram-мост...[/dim]")
+            from .bridge.tg_url import fetch_url, invalidate
+            invalidate()
+            fresh_url = fetch_url(cfg.tg_bridge_token, cfg.tg_bridge_chat_id)
+            if fresh_url and fresh_url != current_url:
+                cfg.set_favorite_api_base_url(fresh_url)
+                console.print(f"[dim]Новый URL: {fresh_url} — повторяю...[/dim]")
+                spin2 = Spinner()
+                spin2.start()
+                try:
+                    response = _call_llm(text, cfg)
+                    spin2.stop()
+                    print_agent_message(response)
+                    mgr.append_history(session_id, {"type": "agent", "content": response})
+                    return
+                except Exception:
+                    spin2.stop()
+        console.print(
+            f"[bold red]Не удалось подключиться к FavoriteAPI.[/bold red] "
+            f"[dim]Текущий адрес: [/dim][#ff8c00]{current_url}[/#ff8c00]"
+        )
+        console.print("[dim]Введи новый URL (или Enter чтобы пропустить):[/dim]")
+        try:
+            new_url = input("  URL: ").strip()
+            if new_url:
+                if not new_url.startswith("http"):
+                    new_url = "http://" + new_url
+                cfg.set_favorite_api_base_url(new_url)
+                console.print(f"[green]Сохранено:[/green] {new_url}. Повтори сообщение.")
+        except (EOFError, KeyboardInterrupt):
+            pass
+        return
     except Exception as e:
         spinner.stop()
         console.print(f"[red]Ошибка API: {e}[/red]")
