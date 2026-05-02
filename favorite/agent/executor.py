@@ -1,8 +1,8 @@
 """
 favorite/agent/executor.py
 Handles LLM response tags: STEP, SHELL_RAW, SHELL_BG, SLEEP,
-WRITE_FAV, WRITE_CTX, GIT_PUSH, SKILL.
-Returns shell/skill output so app.py can feed it back to the AI.
+WRITE_FAV, WRITE_CTX, GIT_PUSH, SKILL, CONTINUE, POLL, WRITE_PLAN.
+Returns shell/skill/poll output so app.py can feed it back to the AI.
 """
 import subprocess
 import time
@@ -51,6 +51,12 @@ def _dispatch(tag: ParsedTag, ctx: "CommandContext", cfg) -> str | None:
         _handle_git_push(tag, ctx, cfg)
     elif name == "SKILL":
         return _handle_skill(tag, ctx, cfg)
+    elif name == "CONTINUE":
+        return _handle_continue(tag)
+    elif name == "POLL":
+        return _handle_poll(tag)
+    elif name == "WRITE_PLAN":
+        return _handle_write_plan(tag, ctx)
     return None
 
 
@@ -150,6 +156,78 @@ def _handle_skill(tag: ParsedTag, ctx: "CommandContext", cfg) -> str | None:
         return _run_fs(tag, ctx)
     console.print(f"  [dim]Скилл '{skill_name}' не найден.[/dim]")
     return None
+
+
+def _handle_continue(tag: ParsedTag) -> str:
+    """
+    ≪CONTINUE≫hint≪/CONTINUE≫
+    Signals the agentic loop to call LLM again without needing tool output.
+    Useful for splitting long responses across multiple turns.
+    Body (optional) is passed back as context.
+    """
+    body = (tag.body or "").strip()
+    return body if body else "[continue]"
+
+
+def _handle_poll(tag: ParsedTag) -> str | None:
+    """
+    ≪POLL≫
+    Question text
+    – Option A
+    – Option B
+    ≪/POLL≫
+    Renders structured question, reads user input, returns answer as tool output.
+    """
+    body = (tag.body or "").strip()
+    if not body:
+        return None
+
+    console.print()
+    console.print("[bold #ff8c00]Вопрос:[/bold #ff8c00]")
+    lines = body.splitlines()
+    question_parts: list[str] = []
+    options: list[str] = []
+    for line in lines:
+        s = line.strip()
+        if s.startswith("–") or s.startswith("-"):
+            options.append(s.lstrip("–- ").strip())
+        elif s:
+            question_parts.append(s)
+
+    if question_parts:
+        console.print(f"  {' '.join(question_parts)}")
+    for i, opt in enumerate(options, 1):
+        console.print(f"  [dim]{i}. {opt}[/dim]")
+
+    try:
+        answer = input("  → ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return "[пользователь не ответил]"
+
+    return f"[ответ: {answer}]"
+
+
+def _handle_write_plan(tag: ParsedTag, ctx: "CommandContext") -> str | None:
+    """
+    ≪WRITE_PLAN≫plan content≪/WRITE_PLAN≫
+    Saves finalized plan to sessions/<session_id>/plan.txt in workdir.
+    """
+    body = (tag.body or "").strip()
+    if not body:
+        return None
+    try:
+        plan_dir = Path(ctx.workdir) / "sessions" / ctx.session_id
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        plan_path = plan_dir / "plan.txt"
+        plan_path.write_text(body, encoding="utf-8")
+        console.print(
+            f"\n  [bold #ff8c00]📋[/bold #ff8c00] [dim]план → "
+            f"sessions/{ctx.session_id}/plan.txt[/dim]"
+        )
+        return f"[план записан: sessions/{ctx.session_id}/plan.txt]"
+    except Exception as e:
+        console.print(f"  [red]WRITE_PLAN: {e}[/red]")
+        return f"WRITE_PLAN ERROR: {e}"
 
 
 def _run_websearch(query: str, cfg) -> str | None:
