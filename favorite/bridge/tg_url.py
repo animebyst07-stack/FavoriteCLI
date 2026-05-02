@@ -60,19 +60,16 @@
 
   def _url_from_message(msg: dict) -> Optional[str]:
       """Извлечь URL из entities сообщения (text_link или plain FAPI_URL:)."""
-      # text_link entity — URL хранится в entity.url
       for entity in msg.get("entities", []):
           if entity.get("type") == "text_link":
               url = entity.get("url", "")
               if url.startswith("http"):
                   return url
-      # Fallback: plain-text "FAPI_URL:<url>"
       text = msg.get("text", "")
       if "FAPI_URL:" in text:
           for part in text.split():
               if part.startswith("FAPI_URL:"):
                   return part[len("FAPI_URL:"):]
-      # Fallback: любая ссылка trycloudflare.com в тексте
       for word in text.split():
           if "trycloudflare.com" in word:
               return word.strip(".,()[]<>")
@@ -81,8 +78,7 @@
 
   def _fetch_from_pinned(bot_token: str, raw_chat_id: str) -> Optional[str]:
       """Пробует оба варианта chat_id (raw и с префиксом -100 для каналов)."""
-      candidates = _resolve_candidates(raw_chat_id)
-      for cid in candidates:
+      for cid in _resolve_candidates(raw_chat_id):
           pinned = _get_pinned(bot_token, cid)
           if pinned:
               url = _url_from_message(pinned)
@@ -93,8 +89,7 @@
 
   def _resolve_candidates(raw: str) -> list:
       """
-      Возвращает список вариантов chat_id для перебора.
-      Для положительных чисел — пробуем и raw, и -100<raw> (каналы/супергруппы).
+      Для положительных чисел пробуем -100<num> (канал/супергруппа) и raw.
       """
       raw = str(raw).strip()
       if raw.startswith("@"):
@@ -107,7 +102,6 @@
       try:
           num = int(raw)
           if num > 0:
-              # Пробуем сначала -100<num> (канал/супергруппа), потом raw
               return [int(f"-100{num}"), num]
           return [num]
       except ValueError:
