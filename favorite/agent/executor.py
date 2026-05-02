@@ -1,6 +1,6 @@
 """
 favorite/agent/executor.py
-Выполняет теги из ответа LLM: STEP, SHELL_RAW, SHELL_BG, SLEEP,
+Handles LLM response tags: STEP, SHELL_RAW, SHELL_BG, SLEEP,
 WRITE_FAV, WRITE_CTX, GIT_PUSH, SKILL.
 """
 import subprocess
@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.console import Console
+from rich.markdown import Markdown
 from .tags import ParsedTag
 
 if TYPE_CHECKING:
@@ -19,7 +20,6 @@ console = Console()
 
 
 def execute_tags(tags: list[ParsedTag], ctx: "CommandContext", cfg) -> None:
-    """Последовательно выполняет теги из ответа агента."""
     for tag in tags:
         _dispatch(tag, ctx, cfg)
 
@@ -47,9 +47,9 @@ def _dispatch(tag: ParsedTag, ctx: "CommandContext", cfg) -> None:
 
 
 def _handle_step(tag: ParsedTag) -> None:
-    body = tag.body or tag.args.get("msg", "")
+    body = (tag.body or tag.args.get("msg", "")).strip()
     if body:
-        console.print(f"  [dim]→ {body}[/dim]")
+        console.print(Markdown(body), style="dim")
 
 
 def _handle_shell(tag: ParsedTag, ctx: "CommandContext", background: bool) -> None:
@@ -99,9 +99,7 @@ def _handle_write_fav(tag: ParsedTag, ctx: "CommandContext") -> None:
         return
     try:
         from ..memory.favorite_md import FavoriteMd
-        fmd = FavoriteMd(ctx.workdir)
-        fmd.write(body)
-        console.print("  [dim]Favorite.md обновлён.[/dim]")
+        FavoriteMd().write(body)
     except Exception as e:
         console.print(f"  [red]WRITE_FAV: {e}[/red]")
 
@@ -113,7 +111,6 @@ def _handle_write_ctx(tag: ParsedTag, ctx: "CommandContext") -> None:
     try:
         ctx_path = Path(ctx.workdir) / "context_summary.md"
         ctx_path.write_text(body, encoding="utf-8")
-        console.print("  [dim]context_summary.md записан.[/dim]")
     except Exception as e:
         console.print(f"  [red]WRITE_CTX: {e}[/red]")
 
