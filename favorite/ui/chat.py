@@ -1,52 +1,141 @@
+"""
+favorite/ui/chat.py
+Claude Code-style terminal UI.
+Thinking → left-bordered dim block.
+Shell → compact command + truncated output.
+Response → proper markdown rendering.
+"""
 from rich.console import Console
-from rich.text import Text
+from rich.markdown import Markdown
 from rich.markup import escape
+from rich.text import Text
 from .theme import ORANGE, WHITE, GRAY, DIM
 
 console = Console()
 
 
-def print_user_line(text: str) -> None:
-    console.print(f"[bold {WHITE}]\u276f[/bold {WHITE}] {escape(text)}")
-
+# ─── Agent response ────────────────────────────────────────────────────────────
 
 def print_agent_message(text: str, agent_name: str = "") -> None:
-    prefix = f"[bold {ORANGE}]\u25cf[/bold {ORANGE}]"
+    """
+    Render AI response with markdown. Orange bullet, then markdown body.
+    For system messages (agent_name="system") renders as plain styled text.
+    """
+    text = text.strip()
+    if not text:
+        return
+    console.print()
+    header = Text()
+    header.append("● ", style=f"bold {ORANGE}")
     if agent_name:
-        prefix += f" [dim]{agent_name}[/dim]"
-    console.print(f"{prefix} {escape(text)}")
+        header.append(agent_name, style=f"dim {GRAY}")
+    console.print(header)
+    # Markdown renders **bold**, - lists, `code` etc. Plain text stays plain.
+    console.print(Markdown(text))
+    console.print()
+
+
+# ─── Thinking / STEP block ────────────────────────────────────────────────────
+
+def print_step(text: str) -> None:
+    """
+    Claude Code-style thinking block — compact, left-bordered, dim.
+    Clearly visually separate from the main response.
+      │ reasoning line 1
+      │ reasoning line 2
+    """
+    lines = [l for l in text.strip().splitlines() if l.strip()]
+    if not lines:
+        return
+    for line in lines:
+        console.print(
+            f"  [#333333]|[/#333333] [dim #777777]{escape(line)}[/dim #777777]"
+        )
 
 
 def print_step_block(text: str) -> None:
-    lines = text.strip().splitlines()
-    for i, line in enumerate(lines):
-        leader = "\u23ce " if i == 0 else "  "
-        console.print(f"  [dim]{leader}{escape(line)}[/dim]")
+    """Backward-compat alias for print_step."""
+    print_step(text)
+
+
+# ─── Shell / tool execution ───────────────────────────────────────────────────
+
+def print_shell_cmd(cmd: str) -> None:
+    """
+    Show shell command about to run.
+      > command (up to 90 chars)
+    """
+    short = cmd.strip()
+    if len(short) > 90:
+        short = short[:87] + "..."
+    console.print(f"  [bold {ORANGE}]>[/bold {ORANGE}] [dim]{escape(short)}[/dim]")
+
+
+def print_shell_output(out: str, err: str, max_lines: int = 6) -> None:
+    """
+    Show shell output compactly — max max_lines lines, excess summarized.
+    stdout = dim gray, stderr = dim red.
+    """
+    out_lines = out.strip().splitlines() if out.strip() else []
+    err_lines = err.strip().splitlines() if err.strip() else []
+    all_lines: list[tuple[str, str]] = (
+        [(l, "out") for l in out_lines] +
+        [(l, "err") for l in err_lines]
+    )
+    if not all_lines:
+        return
+    shown = all_lines[:max_lines]
+    for line, kind in shown:
+        text = escape(line[:130])
+        if kind == "err":
+            console.print(f"  [dim #995555]{text}[/dim #995555]")
+        else:
+            console.print(f"  [dim #666666]{text}[/dim #666666]")
+    extra = len(all_lines) - max_lines
+    if extra > 0:
+        console.print(f"  [dim #444444]... +{extra} lines[/dim #444444]")
+
+
+def print_skill_header(skill_name: str, query: str = "") -> None:
+    """Show skill invocation — compact single line."""
+    q_part = f" [dim #666666]{escape(query[:60])}[/dim #666666]" if query else ""
+    console.print(
+        f"  [bold {ORANGE}]~[/bold {ORANGE}] "
+        f"[dim {GRAY}]{escape(skill_name)}[/dim {GRAY}]{q_part}"
+    )
+
+
+# ─── System / separator ────────────────────────────────────────────────────────
+
+def print_separator() -> None:
+    console.print("─" * 54, style=f"dim {GRAY}")
 
 
 def print_thinking(frame: str) -> None:
-    console.print(f"  [dim italic]{frame}[/dim italic]")
+    """Legacy — kept for spinner compat."""
+    console.print(f"  [dim italic {GRAY}]{escape(frame)}[/dim italic {GRAY}]")
+
+
+def print_user_line(text: str) -> None:
+    console.print(f"[bold {WHITE}]>[/bold {WHITE}] {escape(text)}")
+
+
+def print_status(text: str) -> None:
+    console.print(f"[dim]{escape(text)}[/dim]", end="\r")
 
 
 def print_poll(question: str, options: list[tuple[str, str]]) -> str:
-    console.print(f"\n[bold {ORANGE}]\u276f[/bold {ORANGE}] {escape(question)}")
+    """Structured poll UI (legacy signature kept for any callers)."""
+    console.print(f"\n[bold {ORANGE}]?[/bold {ORANGE}] {escape(question)}")
     for idx, (opt_text, hint) in enumerate(options, 1):
         hint_part = f"  [dim]– {escape(hint)}[/dim]" if hint else ""
         console.print(f"  [{WHITE}]{idx}.[/{WHITE}] {escape(opt_text)}{hint_part}")
     console.print()
     while True:
         try:
-            raw = input("  Выбери номер: ").strip()
+            raw = input("  → ").strip()
             if raw.isdigit() and 1 <= int(raw) <= len(options):
                 return options[int(raw) - 1][0]
-            console.print(f"  [dim]Введи число от 1 до {len(options)}[/dim]")
+            console.print(f"  [dim]Введи число 1–{len(options)}[/dim]")
         except (EOFError, KeyboardInterrupt):
             return options[-1][0]
-
-
-def print_separator() -> None:
-    console.print("\u2500" * 56, style=f"dim {GRAY}")
-
-
-def print_status(text: str) -> None:
-    console.print(f"[dim]{escape(text)}[/dim]", end="\r")
