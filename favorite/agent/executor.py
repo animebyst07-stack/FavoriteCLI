@@ -2,7 +2,14 @@
 favorite/agent/executor.py
 Handles LLM response tags: STEP, SHELL_RAW, SHELL_BG, SLEEP,
 WRITE_FAV, WRITE_CTX, GIT_PUSH, SKILL, CONTINUE, POLL, WRITE_PLAN.
-Returns shell/skill/poll output so app.py can feed it back to the AI.
+
+Display rules (Claude Code aesthetic):
+  STEP      → compact left-bordered dim block, no markdown noise
+  SHELL_RAW → show command + max 6 lines output, rest summarized
+  SHELL_BG  → show command only
+  WRITE_*   → completely silent (just writes file)
+  SKILL     → single-line header, results compact
+  POLL      → interactive question block
 """
 import subprocess
 import time
@@ -11,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.console import Console
-from rich.markdown import Markdown
+from rich.markup import escape
 from .tags import ParsedTag
 
 if TYPE_CHECKING:
@@ -61,43 +68,45 @@ def _dispatch(tag: ParsedTag, ctx: "CommandContext", cfg) -> str | None:
 
 
 def _handle_step(tag: ParsedTag) -> None:
+    """Compact left-bordered thinking block — not markdown, not noisy."""
+    from ..ui.chat import print_step
     body = (tag.body or tag.args.get("msg", "")).strip()
     if body:
-        console.print(Markdown(body), style="dim")
+        print_step(body)
 
 
 def _handle_shell(tag: ParsedTag, ctx: "CommandContext", background: bool) -> str | None:
+    from ..ui.chat import print_shell_cmd, print_shell_output
     cmd = (tag.body or "").strip()
     if not cmd:
         return None
-    console.print(f"  [#ff8c00]$ {cmd}[/#ff8c00]")
+
+    print_shell_cmd(cmd)
+
+    if background:
+        threading.Thread(
+            target=subprocess.run,
+            args=(cmd,),
+            kwargs={"shell": True, "cwd": ctx.workdir},
+            daemon=True,
+        ).start()
+        return None
+
     try:
-        if background:
-            threading.Thread(
-                target=subprocess.run,
-                args=(cmd,),
-                kwargs={"shell": True, "cwd": ctx.workdir},
-                daemon=True,
-            ).start()
-            console.print("  [dim](фон)[/dim]")
-            return None
         result = subprocess.run(
             cmd, shell=True, cwd=ctx.workdir,
             capture_output=True, text=True, timeout=30,
         )
         out = (result.stdout or "").strip()
         err = (result.stderr or "").strip()
-        if out:
-            console.print(f"  [dim]{out[:2000]}[/dim]")
-        if err:
-            console.print(f"  [red]{err[:500]}[/red]")
+        print_shell_output(out, err)
         combined = "\n".join(filter(None, [out, err]))
-        return f"$ {cmd}\n{combined}" if combined else None
+        return f"$ {cmd}\n{combined}" if combined else f"$ {cmd}\n(no output)"
     except subprocess.TimeoutExpired:
-        console.print("  [red]Превышен таймаут (30 сек).[/red]")
+        console.print("  [dim #995555]timeout (30s)[/dim #995555]")
         return f"$ {cmd}\nERROR: timeout"
     except Exception as e:
-        console.print(f"  [red]Ошибка shell: {e}[/red]")
+        console.print(f"  [dim #995555]error: {escape(str(e))}[/dim #995555]")
         return f"$ {cmd}\nERROR: {e}"
 
 
@@ -105,13 +114,14 @@ def _handle_sleep(tag: ParsedTag) -> None:
     try:
         secs = float(tag.args.get("s", tag.body or "1"))
         secs = min(secs, 30.0)
-        console.print(f"  [dim]Жду {secs}с...[/dim]")
+        console.print(f"  [dim #666666]sleep {secs}s[/dim #666666]")
         time.sleep(secs)
     except (ValueError, TypeError):
         pass
 
 
 def _handle_write_fav(tag: ParsedTag, ctx: "CommandContext") -> None:
+    """Silent — just writes file."""
     body = (tag.body or "").strip()
     if not body:
         return
@@ -119,10 +129,11 @@ def _handle_write_fav(tag: ParsedTag, ctx: "CommandContext") -> None:
         from ..memory.favorite_md import FavoriteMd
         FavoriteMd().write(body)
     except Exception as e:
-        console.print(f"  [red]WRITE_FAV: {e}[/red]")
+        console.print(f"  [dim #995555]WRITE_FAV: {escape(str(e))}[/dim #995555]")
 
 
 def _handle_write_ctx(tag: ParsedTag, ctx: "CommandContext") -> None:
+    """Silent — just writes file."""
     body = (tag.body or "").strip()
     if not body:
         return
@@ -130,40 +141,45 @@ def _handle_write_ctx(tag: ParsedTag, ctx: "CommandContext") -> None:
         ctx_path = Path(ctx.workdir) / "context_summary.md"
         ctx_path.write_text(body, encoding="utf-8")
     except Exception as e:
-        console.print(f"  [red]WRITE_CTX: {e}[/red]")
+        console.print(f"  [dim #995555]WRITE_CTX: {escape(str(e))}[/dim #995555]")
 
 
 def _handle_git_push(tag: ParsedTag, ctx: "CommandContext", cfg) -> None:
     msg = tag.args.get("msg", tag.body or "auto: agent push").strip()
-    console.print(f"  [dim]GIT_PUSH: {msg}[/dim]")
+    console.print(f"  [dim #666666]git push: {escape(msg[:60])}[/dim #666666]")
     try:
         from ..github.auto_push import AutoPush
         ap = AutoPush(cfg)
         ap.push_workdir(ctx.workdir, commit_msg=msg)
-        console.print("  [dim]Запушено.[/dim]")
+        console.print("  [dim #666666]pushed[/dim #666666]")
     except Exception as e:
-        console.print(f"  [red]GIT_PUSH: {e}[/red]")
+        console.print(f"  [dim #995555]GIT_PUSH: {escape(str(e))}[/dim #995555]")
 
 
 def _handle_skill(tag: ParsedTag, ctx: "CommandContext", cfg) -> str | None:
+    from ..ui.chat import print_skill_header
     skill_name = tag.args.get("name", "").lower()
     query = (tag.body or tag.args.get("q", "")).strip()
     if skill_name == "websearch":
+        print_skill_header("websearch", query)
         return _run_websearch(query, cfg)
     if skill_name == "fetch":
+        print_skill_header("fetch", query[:60])
         return _run_fetch(query)
     if skill_name in ("fs", "fstools"):
+        op = tag.args.get("op", "read")
+        path = tag.args.get("path", "")
+        print_skill_header(f"fs:{op}", path)
         return _run_fs(tag, ctx)
-    console.print(f"  [dim]Скилл '{skill_name}' не найден.[/dim]")
+    console.print(f"  [dim #666666]skill '{escape(skill_name)}' not found[/dim #666666]")
     return None
 
 
 def _handle_continue(tag: ParsedTag) -> str:
     """
     ≪CONTINUE≫hint≪/CONTINUE≫
-    Signals the agentic loop to call LLM again without needing tool output.
-    Useful for splitting long responses across multiple turns.
-    Body (optional) is passed back as context.
+    Signals the agentic loop to call LLM again — no tool output needed.
+    Use to split long responses across multiple turns.
     """
     body = (tag.body or "").strip()
     return body if body else "[continue]"
@@ -176,14 +192,12 @@ def _handle_poll(tag: ParsedTag) -> str | None:
     – Option A
     – Option B
     ≪/POLL≫
-    Renders structured question, reads user input, returns answer as tool output.
+    Shows structured question, reads answer, returns it as tool output.
     """
     body = (tag.body or "").strip()
     if not body:
         return None
 
-    console.print()
-    console.print("[bold #ff8c00]Вопрос:[/bold #ff8c00]")
     lines = body.splitlines()
     question_parts: list[str] = []
     options: list[str] = []
@@ -194,23 +208,23 @@ def _handle_poll(tag: ParsedTag) -> str | None:
         elif s:
             question_parts.append(s)
 
-    if question_parts:
-        console.print(f"  {' '.join(question_parts)}")
+    console.print()
+    console.print(f"  [bold #ff8c00]?[/bold #ff8c00] {escape(' '.join(question_parts))}")
     for i, opt in enumerate(options, 1):
-        console.print(f"  [dim]{i}. {opt}[/dim]")
+        console.print(f"  [dim #888888]{i}. {escape(opt)}[/dim #888888]")
 
     try:
         answer = input("  → ").strip()
     except (EOFError, KeyboardInterrupt):
-        return "[пользователь не ответил]"
+        return "[no answer]"
 
-    return f"[ответ: {answer}]"
+    return f"[answer: {escape(answer)}]"
 
 
 def _handle_write_plan(tag: ParsedTag, ctx: "CommandContext") -> str | None:
     """
     ≪WRITE_PLAN≫plan content≪/WRITE_PLAN≫
-    Saves finalized plan to sessions/<session_id>/plan.txt in workdir.
+    Saves plan to sessions/<session_id>/plan.txt. Shows one-line confirmation.
     """
     body = (tag.body or "").strip()
     if not body:
@@ -221,12 +235,12 @@ def _handle_write_plan(tag: ParsedTag, ctx: "CommandContext") -> str | None:
         plan_path = plan_dir / "plan.txt"
         plan_path.write_text(body, encoding="utf-8")
         console.print(
-            f"\n  [bold #ff8c00]📋[/bold #ff8c00] [dim]план → "
-            f"sessions/{ctx.session_id}/plan.txt[/dim]"
+            f"  [bold #ff8c00]>[/bold #ff8c00] [dim #666666]plan saved → "
+            f"sessions/{ctx.session_id}/plan.txt[/dim #666666]"
         )
-        return f"[план записан: sessions/{ctx.session_id}/plan.txt]"
+        return f"[plan saved: sessions/{ctx.session_id}/plan.txt]"
     except Exception as e:
-        console.print(f"  [red]WRITE_PLAN: {e}[/red]")
+        console.print(f"  [dim #995555]WRITE_PLAN: {escape(str(e))}[/dim #995555]")
         return f"WRITE_PLAN ERROR: {e}"
 
 
@@ -238,13 +252,13 @@ def _run_websearch(query: str, cfg) -> str | None:
         results = search(query, cfg)
         lines = []
         for r in results[:3]:
-            console.print(f"  [bold #ff8c00]{r['title']}[/bold #ff8c00]")
-            console.print(f"  [dim]{r['snippet']}[/dim]")
-            console.print(f"  [blue]{r['url']}[/blue]\n")
+            console.print(
+                f"  [dim #888888]{escape(r['title'][:70])}[/dim #888888]"
+            )
             lines.append(f"[{r['title']}]({r['url']})\n{r['snippet']}")
         return "\n\n".join(lines) if lines else None
     except Exception as e:
-        console.print(f"  [red]WebSearch: {e}[/red]")
+        console.print(f"  [dim #995555]websearch: {escape(str(e))}[/dim #995555]")
         return f"WebSearch ERROR: {e}"
 
 
@@ -254,10 +268,10 @@ def _run_fetch(url: str) -> str | None:
     try:
         from ..skills.fetch_url import fetch_text
         text = fetch_text(url)
-        console.print(f"  [dim]{text[:1500]}[/dim]")
+        # Don't print to screen — just return to AI
         return text[:4000]
     except Exception as e:
-        console.print(f"  [red]Fetch: {e}[/red]")
+        console.print(f"  [dim #995555]fetch: {escape(str(e))}[/dim #995555]")
         return f"Fetch ERROR: {e}"
 
 
@@ -267,9 +281,8 @@ def _run_fs(tag: ParsedTag, ctx: "CommandContext") -> str | None:
     try:
         from ..skills.fs_tools import fs_op
         result = fs_op(op, path, tag.body or "", ctx.workdir)
-        if result:
-            console.print(f"  [dim]{result[:2000]}[/dim]")
+        # Don't print file contents to screen — just return to AI
         return result or None
     except Exception as e:
-        console.print(f"  [red]FS: {e}[/red]")
+        console.print(f"  [dim #995555]fs: {escape(str(e))}[/dim #995555]")
         return f"FS ERROR: {e}"
