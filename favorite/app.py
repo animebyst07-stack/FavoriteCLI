@@ -90,10 +90,10 @@ def _show_home(workdir: str) -> None:
 
 
 def _load_system_prompt(workdir: str) -> str:
-    """Читает Favorite.md из рабочей директории как системный промпт."""
+    """Читает Favorite.md из корня FavoriteCLI как системный промпт."""
     try:
         from .memory.favorite_md import FavoriteMd
-        fmd = FavoriteMd(workdir)
+        fmd = FavoriteMd()
         return fmd.read() or ""
     except Exception:
         return ""
