@@ -109,8 +109,24 @@ class Config:
         self._keys["favorite_api_base_url"] = url
         _save("api_keys.json", self._keys)
 
-    # --- Helpers ---
-    def default_openrouter_key(self) -> dict | None:
+    # --- TG Bridge ---
+      @property
+      def tg_bridge_token(self) -> str:
+          return self._keys.get("tg_bridge", {}).get("token", "")
+
+      @property
+      def tg_bridge_chat_id(self) -> str:
+          return self._keys.get("tg_bridge", {}).get("chat_id", "")
+
+      def set_tg_bridge(self, bridge_token: str, chat_id: str) -> None:
+          self._keys["tg_bridge"] = {"token": bridge_token, "chat_id": chat_id}
+          _save("api_keys.json", self._keys)
+
+      def has_tg_bridge(self) -> bool:
+          return bool(self.tg_bridge_token and self.tg_bridge_chat_id)
+
+      # --- Helpers ---
+      def default_openrouter_key(self) -> dict | None:
         for k in self.openrouter_keys:
             if k.get("is_default"):
                 return k
