@@ -2,6 +2,7 @@
 favorite/agent/executor.py
 Handles LLM response tags: STEP, SHELL_RAW, SHELL_BG, SLEEP,
 WRITE_FAV, WRITE_CTX, GIT_PUSH, SKILL.
+Returns shell/skill output so app.py can feed it back to the AI.
 """
 import subprocess
 import time
@@ -20,16 +21,24 @@ console = Console()
 
 
 def execute_tags(tags: list[ParsedTag], ctx: "CommandContext", cfg) -> None:
+    execute_tags_with_output(tags, ctx, cfg)
+
+
+def execute_tags_with_output(tags: list[ParsedTag], ctx: "CommandContext", cfg) -> str:
+    parts: list[str] = []
     for tag in tags:
-        _dispatch(tag, ctx, cfg)
+        out = _dispatch(tag, ctx, cfg)
+        if out:
+            parts.append(out)
+    return "\n".join(parts)
 
 
-def _dispatch(tag: ParsedTag, ctx: "CommandContext", cfg) -> None:
+def _dispatch(tag: ParsedTag, ctx: "CommandContext", cfg) -> str | None:
     name = tag.name.upper()
     if name == "STEP":
         _handle_step(tag)
     elif name == "SHELL_RAW":
-        _handle_shell(tag, ctx, background=False)
+        return _handle_shell(tag, ctx, background=False)
     elif name == "SHELL_BG":
         _handle_shell(tag, ctx, background=True)
     elif name == "SLEEP":
@@ -41,9 +50,8 @@ def _dispatch(tag: ParsedTag, ctx: "CommandContext", cfg) -> None:
     elif name == "GIT_PUSH":
         _handle_git_push(tag, ctx, cfg)
     elif name == "SKILL":
-        _handle_skill(tag, ctx, cfg)
-    else:
-        console.print(f"  [dim]Тег {tag.name} — не поддерживается.[/dim]")
+        return _handle_skill(tag, ctx, cfg)
+    return None
 
 
 def _handle_step(tag: ParsedTag) -> None:
@@ -52,10 +60,10 @@ def _handle_step(tag: ParsedTag) -> None:
         console.print(Markdown(body), style="dim")
 
 
-def _handle_shell(tag: ParsedTag, ctx: "CommandContext", background: bool) -> None:
+def _handle_shell(tag: ParsedTag, ctx: "CommandContext", background: bool) -> str | None:
     cmd = (tag.body or "").strip()
     if not cmd:
-        return
+        return None
     console.print(f"  [#ff8c00]$ {cmd}[/#ff8c00]")
     try:
         if background:
@@ -66,21 +74,25 @@ def _handle_shell(tag: ParsedTag, ctx: "CommandContext", background: bool) -> No
                 daemon=True,
             ).start()
             console.print("  [dim](фон)[/dim]")
-        else:
-            result = subprocess.run(
-                cmd, shell=True, cwd=ctx.workdir,
-                capture_output=True, text=True, timeout=30,
-            )
-            out = (result.stdout or "").strip()
-            err = (result.stderr or "").strip()
-            if out:
-                console.print(f"  [dim]{out[:2000]}[/dim]")
-            if err:
-                console.print(f"  [red]{err[:500]}[/red]")
+            return None
+        result = subprocess.run(
+            cmd, shell=True, cwd=ctx.workdir,
+            capture_output=True, text=True, timeout=30,
+        )
+        out = (result.stdout or "").strip()
+        err = (result.stderr or "").strip()
+        if out:
+            console.print(f"  [dim]{out[:2000]}[/dim]")
+        if err:
+            console.print(f"  [red]{err[:500]}[/red]")
+        combined = "\n".join(filter(None, [out, err]))
+        return f"$ {cmd}\n{combined}" if combined else None
     except subprocess.TimeoutExpired:
         console.print("  [red]Превышен таймаут (30 сек).[/red]")
+        return f"$ {cmd}\nERROR: timeout"
     except Exception as e:
         console.print(f"  [red]Ошибка shell: {e}[/red]")
+        return f"$ {cmd}\nERROR: {e}"
 
 
 def _handle_sleep(tag: ParsedTag) -> None:
@@ -127,45 +139,51 @@ def _handle_git_push(tag: ParsedTag, ctx: "CommandContext", cfg) -> None:
         console.print(f"  [red]GIT_PUSH: {e}[/red]")
 
 
-def _handle_skill(tag: ParsedTag, ctx: "CommandContext", cfg) -> None:
+def _handle_skill(tag: ParsedTag, ctx: "CommandContext", cfg) -> str | None:
     skill_name = tag.args.get("name", "").lower()
     query = (tag.body or tag.args.get("q", "")).strip()
     if skill_name == "websearch":
-        _run_websearch(query, cfg)
-    elif skill_name == "fetch":
-        _run_fetch(query)
-    elif skill_name in ("fs", "fstools"):
-        _run_fs(tag, ctx)
-    else:
-        console.print(f"  [dim]Скилл '{skill_name}' не найден.[/dim]")
+        return _run_websearch(query, cfg)
+    if skill_name == "fetch":
+        return _run_fetch(query)
+    if skill_name in ("fs", "fstools"):
+        return _run_fs(tag, ctx)
+    console.print(f"  [dim]Скилл '{skill_name}' не найден.[/dim]")
+    return None
 
 
-def _run_websearch(query: str, cfg) -> None:
+def _run_websearch(query: str, cfg) -> str | None:
     if not query:
-        return
+        return None
     try:
         from ..skills.web_search import search
         results = search(query, cfg)
+        lines = []
         for r in results[:3]:
             console.print(f"  [bold #ff8c00]{r['title']}[/bold #ff8c00]")
             console.print(f"  [dim]{r['snippet']}[/dim]")
             console.print(f"  [blue]{r['url']}[/blue]\n")
+            lines.append(f"[{r['title']}]({r['url']})\n{r['snippet']}")
+        return "\n\n".join(lines) if lines else None
     except Exception as e:
         console.print(f"  [red]WebSearch: {e}[/red]")
+        return f"WebSearch ERROR: {e}"
 
 
-def _run_fetch(url: str) -> None:
+def _run_fetch(url: str) -> str | None:
     if not url:
-        return
+        return None
     try:
         from ..skills.fetch_url import fetch_text
         text = fetch_text(url)
         console.print(f"  [dim]{text[:1500]}[/dim]")
+        return text[:4000]
     except Exception as e:
         console.print(f"  [red]Fetch: {e}[/red]")
+        return f"Fetch ERROR: {e}"
 
 
-def _run_fs(tag: ParsedTag, ctx: "CommandContext") -> None:
+def _run_fs(tag: ParsedTag, ctx: "CommandContext") -> str | None:
     op = tag.args.get("op", "read")
     path = tag.args.get("path", "")
     try:
@@ -173,5 +191,7 @@ def _run_fs(tag: ParsedTag, ctx: "CommandContext") -> None:
         result = fs_op(op, path, tag.body or "", ctx.workdir)
         if result:
             console.print(f"  [dim]{result[:2000]}[/dim]")
+        return result or None
     except Exception as e:
         console.print(f"  [red]FS: {e}[/red]")
+        return f"FS ERROR: {e}"
