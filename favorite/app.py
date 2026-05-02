@@ -26,8 +26,6 @@ from .commands.base import CommandContext
 
 console = Console()
 
-_MAX_AGENT_STEPS = 8
-
 
 def _get_model_name(cfg) -> str:
     or_key = cfg.default_openrouter_key()
@@ -249,7 +247,7 @@ def _agent_loop(
     all_responses: list[str] = []
     response = first_response
 
-    for _step in range(_MAX_AGENT_STEPS):
+    while True:
         tags = extract_tags(response)
         clean = strip_tags(response) if tags else response
 
