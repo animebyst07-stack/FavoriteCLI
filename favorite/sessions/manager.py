@@ -17,8 +17,8 @@ class SessionManager:
             "title": title or "Новая сессия",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "workdir": workdir,
-            "leading_main_agent": "main-1",
-            "agents": ["main-1"],
+            "leading_main_agent": "",
+            "agents": [],
         }
         session_dir = _BASE / sid
         session_dir.mkdir(parents=True, exist_ok=True)
