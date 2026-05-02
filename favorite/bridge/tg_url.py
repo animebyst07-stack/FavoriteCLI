@@ -1,7 +1,7 @@
 """
   FavoriteCLI — bridge/tg_url.py
-  Читает актуальный URL FavoriteAPI из Telegram (pinned_message в чате).
-  FavoriteAPI публикует "FAPI_URL:<url>" и пинит его; мы читаем через getChat.
+  Читает актуальный URL FavoriteAPI из pinned_message в Telegram-чате.
+  FavoriteAPI пинит своё красивое уведомление; URL хранится в entities (text_link).
   """
   import json
   import time
@@ -14,7 +14,7 @@
 
 
   def fetch_url(bot_token: str, chat_id: str) -> Optional[str]:
-      """Возвращает FAPI_URL из pinned_message. Кеш 30 сек."""
+      """Возвращает URL из pinned_message.entities. Кеш 30 сек."""
       now = time.time()
       if _cache["url"] and now - _cache["ts"] < _TTL:
           return _cache["url"]
@@ -32,7 +32,7 @@
 
 
   def _fetch_from_pinned(bot_token: str, chat_id: str) -> Optional[str]:
-      """getChat -> pinned_message.text -> FAPI_URL:."""
+      """getChat -> pinned_message.entities -> text_link с trycloudflare.com."""
       try:
           cid = _normalize(chat_id)
           payload = json.dumps({"chat_id": cid}).encode("utf-8")
@@ -49,6 +49,13 @@
           pinned = data["result"].get("pinned_message")
           if not pinned:
               return None
+          # Ищем text_link entity — там хранится href из HTML-сообщения
+          for entity in pinned.get("entities", []):
+              if entity.get("type") == "text_link":
+                  url = entity.get("url", "")
+                  if url.startswith("http"):
+                      return url
+          # Fallback: plain-text "FAPI_URL:<url>"
           text = pinned.get("text", "")
           if text.startswith("FAPI_URL:"):
               return text[len("FAPI_URL:"):]
