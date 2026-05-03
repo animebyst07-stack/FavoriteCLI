@@ -266,7 +266,8 @@ def _handle_read_file(tag: ParsedTag, ctx: "CommandContext") -> str:
         if not path.is_file():
             return f"READ_FILE ERROR: Path is not a file: {path_str}"
         content = path.read_text(encoding="utf-8")
-        console.print(f"  [dim #666666]read file: {path_str}[/dim #666666]")
+        from ..ui.chat import print_status_line
+        print_status_line("Read File", path_str, color="#666666")
         return content
     except Exception as e:
         return f"READ_FILE ERROR: {e}"
@@ -281,7 +282,8 @@ def _handle_write_file(tag: ParsedTag, ctx: "CommandContext") -> str:
         path = Path(ctx.workdir) / path_str
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-        console.print(f"  [dim #666666]wrote file: {path_str}[/dim #666666]")
+        from ..ui.chat import print_status_line
+        print_status_line("Write File", path_str, color="#666666")
         return f"File saved: {path_str}"
     except Exception as e:
         return f"WRITE_FILE ERROR: {e}"
@@ -307,7 +309,8 @@ def _handle_sub_agent(tag: ParsedTag, cfg) -> str:
     if not task:
         return "SUB_AGENT ERROR: Missing task description in body"
     
-    console.print(f"  [bold #ff8c00]●[/bold #ff8c00] [dim]Spawning sub-agent:[/dim] [cyan]{role}[/cyan]")
+    from ..ui.chat import print_status_line
+    print_status_line("Create Sub Agents", role, color="#ff8c00")
     
     try:
         from .sub_agent import run_sub_agent
@@ -324,11 +327,12 @@ def _handle_tasks(tag: ParsedTag, ctx: "CommandContext") -> str:
     name = tag.name.upper()
 
     try:
+        from ..ui.chat import print_status_line
         if name == "ADD_TASK":
             title = (tag.body or tag.args.get("title", "")).strip()
             if not title: return "ADD_TASK ERROR: Missing title"
             task = manager.add_task(title)
-            console.print(f"  [dim #666666]task added: {task.id}[/dim #666666]")
+            print_status_line("Task Added", f"{task.id} — {title[:50]}", color="#ff8c00")
             return f"Task added: {task.id}"
         
         elif name == "UPDATE_TASK":
@@ -340,7 +344,7 @@ def _handle_tasks(tag: ParsedTag, ctx: "CommandContext") -> str:
             if tag.body: kwargs["notes"] = tag.body.strip()
             task = manager.update_task(tid, **kwargs)
             if not task: return f"UPDATE_TASK ERROR: Task {tid} not found"
-            console.print(f"  [dim #666666]task updated: {tid}[/dim #666666]")
+            print_status_line("Task Updated", f"{tid} → {status or 'notes'}", color="#666666")
             return f"Task {tid} updated"
 
         elif name == "COMPLETE_TASK":
@@ -348,7 +352,7 @@ def _handle_tasks(tag: ParsedTag, ctx: "CommandContext") -> str:
             if not tid: return "COMPLETE_TASK ERROR: Missing id"
             task = manager.update_task(tid, status="done")
             if not task: return f"COMPLETE_TASK ERROR: Task {tid} not found"
-            console.print(f"  [dim #666666]task completed: {tid}[/dim #666666]")
+            print_status_line("Task Done", tid, color="#666666")
             return f"Task {tid} completed"
 
         elif name == "LIST_TASKS":
@@ -366,12 +370,11 @@ def _run_websearch(query: str, cfg) -> str | None:
         return None
     try:
         from ..skills.web_search import search
+        from ..ui.chat import print_status_line as _psl
         results = search(query, cfg)
         lines = []
         for r in results[:3]:
-            console.print(
-                f"  [dim #888888]{escape(r['title'][:70])}[/dim #888888]"
-            )
+            _psl("Search Web", r['title'][:70], color="#666666")
             lines.append(f"[{r['title']}]({r['url']})\n{r['snippet']}")
         return "\n\n".join(lines) if lines else None
     except Exception as e:
