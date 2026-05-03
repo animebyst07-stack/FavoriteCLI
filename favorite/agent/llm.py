@@ -36,6 +36,19 @@ def _inject_system_into_messages(messages: list[dict]) -> list[dict]:
     else:
         other.insert(0, {"role": "user", "content": f"[SYSTEM INSTRUCTIONS]\n{system_text}"})
 
+    # BUG FIX 5: If history is long, inject a reminder into the LAST message
+    if len(other) >= 10:
+        last_msg = other[-1]
+        if last_msg.get("role") == "user":
+            # Find workdir from system_text if possible, or just use a generic reminder
+            import re
+            workdir_match = re.search(r"Working directory: (.*)", system_text)
+            workdir = workdir_match.group(1) if workdir_match else "unknown"
+            
+            reminder = f"\n\n[SYSTEM REMINDER: You are Favorite CLI agent. Working dir: {workdir}]"
+            if reminder not in last_msg["content"]:
+                last_msg["content"] += reminder
+
     return other
 
 
