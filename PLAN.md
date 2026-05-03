@@ -19,10 +19,10 @@ GitHub: https://github.com/animebyst07-stack/FavoriteCLI
 - [x] `favorite/commands/` — ICommand + registry + все базовые команды
 - [x] `favorite/agent/tags.py` — парсер тегов ≪TAG≫
 - [x] `favorite/agent/sub_roles_library.json` — 20 встроенных ролей
-- [x] `favorite/sessions/manager.py` — CRUD сессий
+- [x] `favorite/sessions/manager.py` — CRUD сессий + stats tracking
 - [x] `favorite/github/api_client.py` — GitHub REST API
 - [x] `favorite/github/auto_push.py` — авто-пуш
-- [x] `favorite/api/` — IChatProvider, FavoriteApiClient, OpenRouterClient
+- [x] `favorite/api/` — IChatProvider, FavoriteApiClient, OpenRouterClient, NvidiaClient
 - [x] `favorite/memory/favorite_md.py` — чтение/запись Favorite.md
 - [x] `favorite/setup_wizard.py` — мастер первого запуска
 - [x] `favorite/app.py` — DI-контейнер, главный run-loop
@@ -40,37 +40,55 @@ GitHub: https://github.com/animebyst07-stack/FavoriteCLI
 
 ---
 
-## ОТСЕК 2 — Ядро агента: история + теги + скиллы [IN PROGRESS]
+## ОТСЕК 2 — Ядро агента: история + теги + скиллы [DONE]
 
 - [x] Многоходовая история messages[] — AI помнит разговор (последние 20 сообщений)
 - [x] Системный промпт из Favorite.md передаётся при каждом запросе
-- [x] `favorite/agent/executor.py` — обработчик тегов: STEP, SHELL_RAW, SHELL_BG, SLEEP, WRITE_FAV, WRITE_CTX, GIT_PUSH, SKILL
+- [x] `favorite/agent/executor.py` — все теги: STEP, SHELL_RAW, SHELL_BG, SLEEP, WRITE_FAV, WRITE_CTX, GIT_PUSH, SKILL, CONTINUE, POLL, WRITE_PLAN, READ_FILE, WRITE_FILE, ASK_USER, THINK, SUB_AGENT, ADD_TASK, UPDATE_TASK, COMPLETE_TASK, LIST_TASKS
 - [x] `favorite/skills/web_search.py` — VoidAI perplexity/sonar + DuckDuckGo fallback
 - [x] `favorite/skills/fetch_url.py` — загрузка URL + очистка HTML
 - [x] `favorite/skills/fs_tools.py` — read/write/append/list файлов в WORKDIR
-- [ ] Стриминг SSE от OpenRouter (печать по токену)
-- [ ] Режим /plan: диалог → POLL → WRITE_PLAN → sessions/<id>/plan.txt
-- [ ] Режим /build: чтение plan.txt + исполнение тегов + GIT_PUSH
+- [x] Стриминг SSE от OpenRouter с подавлением `<thinking>` блоков в реальном времени
+- [x] Режим /plan: диалог → POLL → WRITE_PLAN → sessions/<id>/plan.txt
+- [x] Режим /build: чтение plan.txt + исполнение тегов + GIT_PUSH
+- [x] `favorite/agent/response_processor.py` — strip_thinking_blocks() для не-стримингового пути
+- [x] `favorite/agent/system_prompt.py` — централизованный build_system_prompt()
+- [x] `favorite/agent/model_router.py` — RouterModule: classify_prompt() + select_model()
+- [x] `favorite/api/nvidia.py` — NvidiaClient(IChatProvider) — NVIDIA NIM endpoint
+- [x] `favorite/config/loader.py` — nvidia_key поле
 
 ---
 
-## ОТСЕК 3 — Многоагентность + /auto + hot-reload памяти [TODO]
+## ОТСЕК 3 — Многоагентность + hot-reload памяти [IN PROGRESS]
 
-- [ ] MainAgent / SubAgent с очередью запросов
-- [ ] Библиотека ролей: 100+ ролей в sub_roles_library.json
-- [ ] /agents: вкл/выкл, назначить роль
-- [ ] /auto: глубокая автоматизация
-- [ ] /silent режим
-- [ ] Hot-reload Favorite.md через watchdog
-- [ ] Compaction: WRITE_CTX при переполнении контекста
+- [x] `/agents list` — таблица активных агентов + доступные роли из библиотеки
+- [x] `/agents spawn <role> <task>` — запускает суб-агент с ролью, возвращает результат
+- [x] `favorite/agent/sub_agent.py` — run_sub_agent(role, task, cfg) — in-process суб-агент
+- [x] `≪SUB_AGENT:role=...≫` тег — вызов суб-агента из main agent loop
+- [x] Hot-reload Favorite.md через watchdog Observer — уведомление при изменении файла
+- [x] `/memory` — показать содержимое Favorite.md в rich Panel
+- [x] `/memory edit` — открыть $EDITOR или показать путь
+- [x] `favorite/memory/hot_reload.py` — start_watcher() с дебаунсингом
+- [x] `favorite/commands/memory_cmd.py` — MemoryCommand
+- [ ] `/auto` — глубокая автоматизация (continuous loop без user input)
+- [ ] `/silent` режим — тихая работа без вывода UI
+- [ ] Compaction: WRITE_CTX при переполнении контекста (>16K токенов)
+- [ ] Библиотека ролей: расширение до 100+ ролей в sub_roles_library.json
 
 ---
 
-## ОТСЕК 4 — Telegram-уведомления + /usage [TODO]
+## ОТСЕК 4 — Telegram-уведомления + /usage [IN PROGRESS]
 
+- [x] `/usage` — показывает статистику: запросы, токены (est), длительность, модель, размер Favorite.md
+- [x] `favorite/commands/usage_cmd.py` — UsageCommand
+- [x] `favorite/tasks/manager.py` — TaskManager: CRUD задач в sessions/<id>/tasks.json
+- [x] `favorite/commands/tasks_cmd.py` — /tasks list/add/done/todo/progress/del
 - [ ] Telegram-уведомления (три режима роутинга + дайджест)
-- [ ] /usage дашборд (токены, деньги, context_kb)
-- [ ] /doctor, /recap, /compact, /effort, /map
+- [ ] `/doctor` — диагностика: API ключи, сеть, воркдир
+- [ ] `/recap` — краткий дайджест сессии
+- [ ] `/compact` — сжать историю до context_summary.md
+- [ ] `/effort` — оценка сложности задачи
+- [ ] `/map` — карта файлов проекта
 
 ---
 
