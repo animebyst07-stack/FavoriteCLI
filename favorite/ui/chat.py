@@ -1,14 +1,17 @@
 """
 favorite/ui/chat.py
 Claude Code-style terminal UI.
-Thinking → left-bordered dim block.
-Shell → compact command + truncated output.
+Thinking → compact animated status.
+Shell → compact command output.
 Response → proper markdown rendering.
 """
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.markup import escape
 from rich.text import Text
+import itertools
+import threading
+import time
 from .theme import ORANGE, WHITE, GRAY, DIM
 
 console = Console()
@@ -35,16 +38,65 @@ def print_agent_message(text: str, agent_name: str = "") -> None:
     console.print()
 
 
+def print_status_line(label: str, detail: str = "", color: str = ORANGE) -> None:
+    detail = detail.strip()
+    if detail:
+        console.print(f"[bold {color}]●[/bold {color}] [dim {GRAY}]{escape(label)}[/dim {GRAY}] [dim #666666]{escape(detail)}[/dim #666666]")
+    else:
+        console.print(f"[bold {color}]●[/bold {color}] [dim {GRAY}]{escape(label)}[/dim {GRAY}]")
+
+
 # ─── Thinking / STEP block ────────────────────────────────────────────────────
 
 def print_step(text: str) -> None:
-    """STEP/THINK blocks are internal reasoning — completely hidden from user."""
-    return
+    """STEP/THINK blocks are internal reasoning — rendered as compact status."""
+    print_status_line("Thinking", text, color="#666666")
 
 
 def print_step_block(text: str) -> None:
     """Backward-compat alias for print_step."""
     print_step(text)
+
+
+def render_status_line(label: str, text: str = "", color: str = ORANGE) -> str:
+    body = text.strip()
+    if body:
+        return f"[bold {color}]●[/bold {color}] [dim {GRAY}]{escape(label)}[/dim {GRAY}] [dim #666666]{escape(body)}[/dim #666666]"
+    return f"[bold {color}]●[/bold {color}] [dim {GRAY}]{escape(label)}[/dim {GRAY}]"
+
+
+def print_status(label: str, text: str = "", color: str = ORANGE) -> None:
+    print_status_line(label, text, color=color)
+
+
+class StatusSpinner:
+    def __init__(self, label: str, detail: str = ""):
+        self.label = label
+        self.detail = detail
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self) -> None:
+        def _run():
+            frames = ["◐", "◓", "◑", "◒"]
+            colors = ["#ff8c00", "#ffb347", "#ffd27a", "#ff8c00"]
+            for i, frame in enumerate(itertools.cycle(frames)):
+                if self._stop.is_set():
+                    break
+                color = colors[i % len(colors)]
+                line = f"[bold {color}]{frame}[/bold {color}] [dim {GRAY}]{escape(self.label)}[/dim {GRAY}]"
+                if self.detail:
+                    line += f" [dim #666666]{escape(self.detail)}[/dim #666666]"
+                console.print(line, end="\r")
+                time.sleep(0.12)
+        self._thread = threading.Thread(target=_run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=0.5)
+        console.print(" " * 120, end="\r")
 
 
 # ─── Shell / tool execution ───────────────────────────────────────────────────
@@ -107,10 +159,6 @@ def print_thinking(frame: str) -> None:
 
 def print_user_line(text: str) -> None:
     console.print(f"[bold {WHITE}]>[/bold {WHITE}] {escape(text)}")
-
-
-def print_status(text: str) -> None:
-    console.print(f"[dim]{escape(text)}[/dim]", end="\r")
 
 
 def print_poll(question: str, options: list[tuple[str, str]]) -> str:
