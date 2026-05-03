@@ -23,7 +23,11 @@ from .commands.skills_cmd import SkillsCommand
 from .commands.plan_cmd import PlanCommand
 from .commands.build_cmd import BuildCommand
 from .commands.agents_cmd import AgentsCommand
+from .commands.memory_cmd import MemoryCommand
+from .commands.tasks_cmd import TasksCommand
+from .commands.usage_cmd import UsageCommand
 from .commands.base import CommandContext
+from .agent.system_prompt import build_system_prompt
 
 console = Console()
 
@@ -72,6 +76,9 @@ def _build_registry() -> CommandRegistry:
     reg.register(PlanCommand())
     reg.register(BuildCommand())
     reg.register(AgentsCommand())
+    reg.register(MemoryCommand())
+    reg.register(TasksCommand())
+    reg.register(UsageCommand())
     return reg
 
 
@@ -90,10 +97,9 @@ def _show_home(workdir: str) -> None:
     console.print("[dim]Введи сообщение или / для команд. Ctrl+C — выход.[/dim]\n")
 
 
-def _load_system_prompt(workdir: str) -> str:
+def _load_system_prompt(ctx: CommandContext) -> str:
     try:
-        from .memory.favorite_md import FavoriteMd
-        return FavoriteMd().read() or ""
+        return build_system_prompt(ctx.config, ctx.workdir)
     except Exception:
         return ""
 
@@ -114,6 +120,9 @@ def _build_messages(text: str, history: list[dict], system_prompt: str) -> list[
 
 
 def run() -> None:
+    from .memory.hot_reload import start_watcher
+    from .memory.favorite_md import _DEFAULT as FAV_MD_PATH
+
     platform = detect_platform()
     workdir = _pick_workdir()
     mgr = SessionManager()
@@ -125,57 +134,67 @@ def run() -> None:
         platform=platform,
         config=get_config(),
     )
+
+    def on_fav_md_change():
+        console.print("\n● [dim]Favorite.md обновлён[/dim]")
+
+    watcher = start_watcher(str(FAV_MD_PATH), on_fav_md_change)
+
     session = build_session()
     _show_home(workdir)
 
-    while True:
-        try:
-            raw = session.prompt(get_prompt_tokens, style=STYLE)
-        except KeyboardInterrupt:
-            console.print("\n[dim]Ctrl+C — нажми ещё раз для выхода.[/dim]")
+    try:
+        while True:
             try:
-                session.prompt([("class:prompt-arrow", "\u276f ")], style=STYLE)
-            except (KeyboardInterrupt, EOFError):
-                break
-            continue
-        except EOFError:
-            break
-
-        raw = raw.strip()
-        if not raw:
-            continue
-
-        mgr.append_history(session_id, {"type": "user", "content": raw})
-
-        if raw.startswith("/"):
-            matched_cmd = None
-            matched_args = ""
-            for c in registry.all_sorted():
-                if raw.lower().startswith(c.name.lower()):
-                    matched_cmd = c
-                    matched_args = raw[len(c.name):].strip()
-                    break
-            if matched_cmd:
+                raw = session.prompt(get_prompt_tokens, style=STYLE)
+            except KeyboardInterrupt:
+                console.print("\n[dim]Ctrl+C — нажми ещё раз для выхода.[/dim]")
                 try:
-                    clear_screen()
-                    matched_cmd.execute(matched_args, ctx)
-                except Exception as e:
-                    console.print(f"[red]Ошибка команды: {e}[/red]")
-                _show_home(workdir)
+                    session.prompt([("class:prompt-arrow", "\u276f ")], style=STYLE)
+                except (KeyboardInterrupt, EOFError):
+                    break
+                continue
+            except EOFError:
+                break
+
+            raw = raw.strip()
+            if not raw:
+                continue
+
+            mgr.append_history(session_id, {"type": "user", "content": raw})
+
+            if raw.startswith("/"):
+                matched_cmd = None
+                matched_args = ""
+                for c in registry.all_sorted():
+                    if raw.lower().startswith(c.name.lower()):
+                        matched_cmd = c
+                        matched_args = raw[len(c.name):].strip()
+                        break
+                if matched_cmd:
+                    try:
+                        clear_screen()
+                        matched_cmd.execute(matched_args, ctx)
+                    except Exception as e:
+                        console.print(f"[red]Ошибка команды: {e}[/red]")
+                    _show_home(workdir)
+                else:
+                    console.print(f"[dim]Команда не найдена: {raw}[/dim]")
             else:
-                console.print(f"[dim]Команда не найдена: {raw}[/dim]")
-        else:
-            cfg = reload_config()
-            if not cfg.has_any_provider():
-                console.print(
-                    "[yellow]Нет API-ключа.[/yellow] "
-                    "Добавь через [bold #ff8c00]/OpenRouter API[/bold #ff8c00]"
-                )
-            else:
-                history = mgr.load_history(session_id)
-                system_prompt = _load_system_prompt(workdir)
-                messages = _build_messages(raw, history[:-1], system_prompt)
-                _handle_chat(raw, messages, ctx, mgr, session_id, cfg)
+                cfg = reload_config()
+                if not cfg.has_any_provider():
+                    console.print(
+                        "[yellow]Нет API-ключа.[/yellow] "
+                        "Добавь через [bold #ff8c00]/OpenRouter API[/bold #ff8c00]"
+                    )
+                else:
+                    history = mgr.load_history(session_id)
+                    system_prompt = _load_system_prompt(ctx)
+                    messages = _build_messages(raw, history[:-1], system_prompt)
+                    _handle_chat(raw, messages, ctx, mgr, session_id, cfg)
+    finally:
+        watcher.stop()
+        watcher.join()
 
     clear_screen()
     console.print("\n[dim]До встречи.[/dim]\n")
@@ -198,7 +217,7 @@ def _handle_chat(
     if or_key:
         # --- Streaming path (OpenRouter) ---
         console.print()
-        console.print("  [bold #ff8c00]●[/bold #ff8c00] ", end="")
+        console.print("  [bold #ff8c00]●[/bold #ff8c00] Favorite: ", end="")
         full = ""
         try:
             for chunk in stream_llm(messages, cfg):
@@ -216,7 +235,28 @@ def _handle_chat(
         except Exception as e:
             console.print(f"\n[red]Ошибка API: {e}[/red]")
             return
-        console.print("\n")
+        
+        # After stream, re-render and show stats
+        if full.strip():
+            from rich.markdown import Markdown
+            from .agent.response_processor import strip_thinking_blocks
+            from .agent.tags import strip_tags
+            
+            clean = strip_tags(strip_thinking_blocks(full))
+            if clean.strip():
+                # Move to new line and clear the "Favorite:" prefix line 
+                # actually it's easier to just print a separator and then markdown
+                console.print("\n")
+                print_separator()
+                console.print(Markdown(clean))
+                
+            # Update stats
+            tokens = len(full) // 4
+            mgr.update_stats(session_id, tokens)
+            console.print(f"\n[dim]est. tokens: {tokens}[/dim]")
+        else:
+            console.print("\n")
+
         _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
         return
 
@@ -266,6 +306,10 @@ def _handle_chat(
         return
 
     spinner.stop()
+    if response:
+        tokens = len(response) // 4
+        mgr.update_stats(session_id, tokens)
+        console.print(f"[dim]est. tokens: {tokens}[/dim]")
     _agent_loop(response, messages, ctx, mgr, session_id, cfg)
 
 
@@ -320,6 +364,10 @@ def _agent_loop(
         try:
             response = call_llm(messages, cfg)
             spinner.stop()
+            if response:
+                tokens = len(response) // 4
+                mgr.update_stats(session_id, tokens)
+                console.print(f"[dim]est. tokens: {tokens}[/dim]")
         except KeyboardInterrupt:
             spinner.stop()
             console.print("\n[dim](прервано пользователем)[/dim]")
@@ -330,4 +378,6 @@ def _agent_loop(
             break
 
     final = "\n".join(all_responses)
+    from .agent.response_processor import strip_thinking_blocks
+    final = strip_thinking_blocks(final)
     mgr.append_history(session_id, {"type": "agent", "content": final})
