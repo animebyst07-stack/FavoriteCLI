@@ -132,10 +132,11 @@ def _show_home(workdir: str) -> None:
     console.print("[dim]Введи сообщение или / для команд. Ctrl+C — выход.[/dim]\n")
 
 
-def _load_system_prompt(ctx: CommandContext) -> str:
+def _load_system_prompt(cfg, workdir: str) -> str:
     try:
-        return build_system_prompt(ctx.config, ctx.workdir)
-    except Exception:
+        return build_system_prompt(cfg, workdir)
+    except Exception as e:
+        console.print(f"[red]Ошибка загрузки системного промпта: {e}[/red]")
         return ""
 
 
@@ -184,6 +185,7 @@ def run() -> None:
         session_id=session_id,
         platform=platform,
         config=get_config(),
+        mgr=mgr,
     )
 
     def on_fav_md_change():
@@ -243,7 +245,7 @@ def run() -> None:
                     )
                 else:
                     history = mgr.load_history(session_id)
-                    system_prompt = _load_system_prompt(ctx)
+                    system_prompt = _load_system_prompt(cfg, ctx.workdir)
                     messages = _build_messages(raw, history[:-1], system_prompt)
                     _handle_chat(raw, messages, ctx, mgr, session_id, cfg)
     finally:
@@ -284,22 +286,27 @@ def _handle_chat(
                 _show_tokens_from_text(session_id, mgr, full + (all_text or ""))
             return
         except _req.exceptions.ConnectionError:
-            console.print(f"\n[bold red]Не удалось подключиться к OpenRouter.[/bold red]")
-            return
+            console.print(f"\n[bold red]Не удалось подключиться к OpenRouter.[/bold red] Пробую FavoriteAPI...")
+            # Fall through to FavoriteAPI path
         except Exception as e:
             console.print(f"\n[red]Ошибка API: {e}[/red]")
             return
-        if full.strip():
-            from .agent.response_processor import strip_thinking_blocks
-            from .agent.tags import strip_tags
-            clean = strip_tags(strip_thinking_blocks(full))
-            if clean.strip():
-                print_separator()
-                console.print(Markdown(clean))
-            all_text = _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
-            _show_tokens_from_text(session_id, mgr, full + (all_text or ""))
-        return
+        else:
+            if full.strip():
+                from .agent.response_processor import strip_thinking_blocks
+                from .agent.tags import strip_tags
+                clean = strip_tags(strip_thinking_blocks(full))
+                if clean.strip():
+                    print_separator()
+                    console.print(Markdown(clean))
+                all_text = _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
+                _show_tokens_from_text(session_id, mgr, full + (all_text or ""))
+            return
+    else:
+        # We only get here if or_key is None or if we explicitly fall through
+        pass
 
+    # FavoriteAPI fallback path (was previously under an 'else' if or_key was None)
     spinner = Spinner("Thinking")
     spinner.start()
     try:
