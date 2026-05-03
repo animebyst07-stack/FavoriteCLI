@@ -43,5 +43,15 @@ class FavoriteApiClient(IChatProvider):
         return {}
 
     def reset_context(self) -> dict:
+        """POST /api/v1/reset — сброс контекста. Возвращает dict с полем reset или requires_choice."""
         r = requests.post(f"{self._base}/api/v1/reset", headers=self._headers, timeout=15)
-        return r.json() if r.status_code == 200 else {}
+        return r.json() if r.status_code == 200 else {"reset": False, "error": r.text}
+
+    def reset_context_apply(self, context: str = "clear", favorite: str = "keep") -> dict:
+        """POST /api/v1/reset/apply — применить сброс с выбором что сохранить.
+        context: 'clear' или 'keep'
+        favorite: 'clear' или 'keep'
+        """
+        body = {"context": context, "favorite": favorite}
+        r = requests.post(f"{self._base}/api/v1/reset/apply", headers=self._headers, json=body, timeout=15)
+        return r.json() if r.status_code == 200 else {"reset": False, "error": r.text}
