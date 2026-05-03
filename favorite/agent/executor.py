@@ -111,7 +111,6 @@ def _handle_shell(tag: ParsedTag, ctx: "CommandContext", background: bool) -> st
         )
         out = (result.stdout or "").strip()
         err = (result.stderr or "").strip()
-        print_shell_output(out, err)
         combined = "\n".join(filter(None, [out, err]))
         return f"$ {cmd}\n{combined}" if combined else f"$ {cmd}\n(no output)"
     except subprocess.TimeoutExpired:
