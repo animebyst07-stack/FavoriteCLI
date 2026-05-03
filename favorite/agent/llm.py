@@ -8,6 +8,40 @@ import json
 from typing import Iterator
 
 
+def _inject_system_into_messages(messages: list[dict]) -> list[dict]:
+    """
+    FavoriteAPI and some Gemini-based APIs do NOT support role='system'.
+    This function extracts system messages and prepends them to the first
+    user message so the model actually sees the instructions.
+    """
+    system_parts: list[str] = []
+    other: list[dict] = []
+    for msg in messages:
+        if msg.get("role") == "system":
+            system_parts.append(msg["content"])
+        else:
+            other.append(dict(msg))
+
+    if not system_parts or not other:
+        return messages
+
+    system_text = "\n\n".join(system_parts)
+
+    # Find the first user message to inject into
+    for i, msg in enumerate(other):
+        if msg.get("role") == "user":
+            other[i] = {
+                "role": "user",
+                "content": f"[SYSTEM INSTRUCTIONS]\n{system_text}\n\n[USER MESSAGE]\n{msg['content']}",
+            }
+            break
+    else:
+        # No user message found — prepend as user turn
+        other.insert(0, {"role": "user", "content": f"[SYSTEM INSTRUCTIONS]\n{system_text}"})
+
+    return other
+
+
 def call_llm(messages: list[dict], cfg) -> str:
     """Blocking LLM call. Returns full response text."""
     import requests as req
@@ -15,9 +49,10 @@ def call_llm(messages: list[dict], cfg) -> str:
     from .model_router import RouterModule
 
     prompt = messages[-1]["content"] if messages else ""
+
     try:
         provider_name, model_name, api_key = RouterModule.select_model(prompt, cfg)
-        
+
         if provider_name == "NVIDIA":
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -60,11 +95,16 @@ def call_llm(messages: list[dict], cfg) -> str:
             return strip_thinking_blocks(data["choices"][0]["message"]["content"])
 
         if provider_name == "FavoriteAPI":
+            # FavoriteAPI/Gemini does NOT support role='system' — inject into user message
+            processed = _inject_system_into_messages(messages)
+            # Use the user's configured model, not the router's default
+            fav_cfg = cfg.default_favorite_key()
+            actual_model = (fav_cfg or {}).get("model") or model_name
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
-            body: dict = {"messages": messages, "model": model_name}
+            body = {"messages": processed, "model": actual_model}
             r = req.post(
                 f"{cfg.favorite_api_base_url}/api/v1/chat",
                 headers=headers,
@@ -73,9 +113,8 @@ def call_llm(messages: list[dict], cfg) -> str:
             )
             r.raise_for_status()
             return strip_thinking_blocks(r.json()["choices"][0]["message"]["content"])
-            
-    except Exception as e:
-        # Fallback to hardcoded logic if router fails or selected provider fails
+
+    except Exception:
         pass
 
     # --- FALLBACK ---
@@ -104,11 +143,12 @@ def call_llm(messages: list[dict], cfg) -> str:
 
     fav = cfg.default_favorite_key()
     if fav:
+        processed = _inject_system_into_messages(messages)
         headers = {
             "Authorization": f"Bearer {fav['key']}",
             "Content-Type": "application/json",
         }
-        body: dict = {"messages": messages}
+        body = {"messages": processed}
         if fav.get("model"):
             body["model"] = fav["model"]
         r = req.post(
@@ -177,29 +217,23 @@ def stream_llm(messages: list[dict], cfg) -> Iterator[str]:
                     continue
 
                 buffer += delta
-                
+
                 while buffer:
                     if not in_thinking:
                         if "<thinking" in buffer:
                             start_idx = buffer.find("<thinking")
-                            # If we have "<thinking", we might need more to see if it's really <thinking>
-                            # but usually chunks are big enough. If it's at the end, wait.
                             if ">" in buffer[start_idx:]:
                                 end_tag_idx = buffer.find(">", start_idx) + 1
-                                # Yield everything before <thinking>
                                 if start_idx > 0:
                                     yield buffer[:start_idx]
-                                # Move to thinking state
                                 in_thinking = True
                                 buffer = buffer[end_tag_idx:]
                             else:
-                                # We have a partial tag at the end, yield what's before it and keep the rest
                                 if start_idx > 0:
                                     yield buffer[:start_idx]
                                     buffer = buffer[start_idx:]
                                 break
                         else:
-                            # No <thinking> tag in buffer
                             yield buffer
                             buffer = ""
                     else:
@@ -208,9 +242,7 @@ def stream_llm(messages: list[dict], cfg) -> Iterator[str]:
                             in_thinking = False
                             buffer = buffer[end_idx:]
                         elif "</thinking" in buffer:
-                            # Partial end tag at the end, wait for more
                             break
                         else:
-                            # Still in thinking, discard buffer
                             buffer = ""
                             break
