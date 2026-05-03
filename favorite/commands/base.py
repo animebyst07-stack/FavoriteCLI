@@ -9,6 +9,7 @@ class CommandContext:
     session_id: str
     platform: Any
     config: Any
+    mgr: Any = None
 
 
 class ICommand(ABC):
