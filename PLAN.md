@@ -14,7 +14,7 @@ GitHub: https://github.com/animebyst07-stack/FavoriteCLI
 - [x] `favorite/ui/theme.py` — цветовая схема оранжевый + белый
 - [x] `favorite/ui/welcome.py` — welcome-блок
 - [x] `favorite/ui/spinner.py` — анимация ● серый/белый
-- [x] `favorite/ui/chat.py` — рендер сообщений
+- [x] `favorite/ui/chat.py` — рендер сообщений + print_status_line()
 - [x] `favorite/ui/prompt.py` — slash-меню с автодополнением
 - [x] `favorite/commands/` — ICommand + registry + все базовые команды
 - [x] `favorite/agent/tags.py` — парсер тегов ≪TAG≫
@@ -59,7 +59,7 @@ GitHub: https://github.com/animebyst07-stack/FavoriteCLI
 
 ---
 
-## ОТСЕК 3 — Многоагентность + hot-reload памяти [IN PROGRESS]
+## ОТСЕК 3 — Многоагентность + hot-reload памяти [DONE]
 
 - [x] `/agents list` — таблица активных агентов + доступные роли из библиотеки
 - [x] `/agents spawn <role> <task>` — запускает суб-агент с ролью, возвращает результат
@@ -70,32 +70,36 @@ GitHub: https://github.com/animebyst07-stack/FavoriteCLI
 - [x] `/memory edit` — открыть $EDITOR или показать путь
 - [x] `favorite/memory/hot_reload.py` — start_watcher() с дебаунсингом
 - [x] `favorite/commands/memory_cmd.py` — MemoryCommand
-- [ ] `/auto` — глубокая автоматизация (continuous loop без user input)
-- [ ] `/silent` режим — тихая работа без вывода UI
-- [ ] Compaction: WRITE_CTX при переполнении контекста (>16K токенов)
-- [ ] Библиотека ролей: расширение до 100+ ролей в sub_roles_library.json
 
 ---
 
-## ОТСЕК 4 — Telegram-уведомления + /usage [IN PROGRESS]
+## ОТСЕК 4 — Утилиты + диагностика [DONE]
 
-- [x] `/usage` — показывает статистику: запросы, токены (est), длительность, модель, размер Favorite.md
+- [x] `/usage` — запросы, токены (est), длительность, модель, размер Favorite.md
 - [x] `favorite/commands/usage_cmd.py` — UsageCommand
 - [x] `favorite/tasks/manager.py` — TaskManager: CRUD задач в sessions/<id>/tasks.json
-- [x] `favorite/commands/tasks_cmd.py` — /tasks list/add/done/todo/progress/del
-- [ ] Telegram-уведомления (три режима роутинга + дайджест)
-- [ ] `/doctor` — диагностика: API ключи, сеть, воркдир
-- [ ] `/recap` — краткий дайджест сессии
-- [ ] `/compact` — сжать историю до context_summary.md
-- [ ] `/effort` — оценка сложности задачи
-- [ ] `/map` — карта файлов проекта
+- [x] `favorite/commands/tasks_cmd.py` — /tasks list/add/done/todo/progress/del с rich Table
+- [x] `/doctor` — диагностика: API ключи, сеть, воркдир, Favorite.md, GitHub конфиг
+- [x] `favorite/commands/doctor_cmd.py` — DoctorCommand (OK/FAIL/WARN таблица)
+- [x] `/recap [N]` — компактный дайджест последних N обменов в rich Panel
+- [x] `favorite/commands/recap_cmd.py` — RecapCommand
+- [x] `/compact` — сжать историю в context_summary.md, заменить history.jsonl
+- [x] `favorite/commands/compact_cmd.py` — CompactCommand
+- [x] Централизованный print_status_line() — все статус-строки через одну функцию
+- [x] Null byte в app.py устранён
 
 ---
 
 ## ОТСЕК 5 — Продвинутые фичи [TODO]
 
-- [ ] /voice (STT+TTS)
-- [ ] /architect (дорогая модель думает → дешёвая делает)
+- [ ] `/auto` — непрерывный loop без user input
+- [ ] `/silent` режим — тихая работа
+- [ ] Compaction: WRITE_CTX при переполнении контекста (>16K токенов)
+- [ ] Библиотека ролей: расширение до 100+ ролей
+- [ ] Telegram-уведомления (три режима роутинга + дайджест)
+- [ ] `/effort` — оценка сложности задачи
+- [ ] `/map` — карта файлов проекта
+- [ ] `/voice` (STT+TTS)
+- [ ] `/architect` (дорогая модель думает → дешёвая делает)
 - [ ] MCP поддержка
-- [ ] Soul режим
 - [ ] Web Panel
