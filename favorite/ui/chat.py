@@ -38,19 +38,8 @@ def print_agent_message(text: str, agent_name: str = "") -> None:
 # ─── Thinking / STEP block ────────────────────────────────────────────────────
 
 def print_step(text: str) -> None:
-    """
-    Claude Code-style thinking block — compact, left-bordered, dim.
-    Clearly visually separate from the main response.
-      │ reasoning line 1
-      │ reasoning line 2
-    """
-    lines = [l for l in text.strip().splitlines() if l.strip()]
-    if not lines:
-        return
-    for line in lines:
-        console.print(
-            f"  [#333333]|[/#333333] [dim #777777]{escape(line)}[/dim #777777]"
-        )
+    """STEP/THINK blocks are internal reasoning — completely hidden from user."""
+    return
 
 
 def print_step_block(text: str) -> None:
