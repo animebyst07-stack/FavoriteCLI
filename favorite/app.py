@@ -30,6 +30,7 @@ from .commands.usage_cmd import UsageCommand
 from .commands.doctor_cmd import DoctorCommand
 from .commands.recap_cmd import RecapCommand
 from .commands.compact_cmd import CompactCommand
+from .commands.reset_cmd import ResetCommand
 from .commands.base import CommandContext
 from .agent.system_prompt import build_system_prompt
 
@@ -86,6 +87,7 @@ def _build_registry() -> CommandRegistry:
     reg.register(DoctorCommand())
     reg.register(RecapCommand())
     reg.register(CompactCommand())
+    reg.register(ResetCommand())
     return reg
 
 
