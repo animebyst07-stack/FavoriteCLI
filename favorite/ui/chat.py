@@ -21,20 +21,31 @@ console = Console()
 
 def print_agent_message(text: str, agent_name: str = "") -> None:
     """
-    Render AI response with markdown. Orange bullet, then markdown body.
+    Render AI response. Orange bullet inline with first line, rest as Markdown.
     For system messages (agent_name="system") renders as plain styled text.
     """
     text = text.strip()
     if not text:
         return
     console.print()
+
+    # Split into first line and remainder
+    lines = text.split("\n", 1)
+    first_line = lines[0].strip()
+    rest = lines[1].strip() if len(lines) > 1 else ""
+
+    # Build "● [agent_name] first_line" all on one line
     header = Text()
     header.append("● ", style=f"bold {ORANGE}")
     if agent_name:
-        header.append(agent_name, style=f"dim {GRAY}")
+        header.append(agent_name + "  ", style=f"dim {GRAY}")
+    header.append(first_line)
     console.print(header)
-    # Markdown renders **bold**, - lists, `code` etc. Plain text stays plain.
-    console.print(Markdown(text))
+
+    # Render remainder as Markdown if any
+    if rest:
+        console.print(Markdown(rest))
+
     console.print()
 
 
@@ -101,7 +112,7 @@ class StatusSpinner:
             i = 0
             while not stop_ev.is_set():
                 color = _ANSI_COLORS[i % len(_ANSI_COLORS)]
-                frame = _FRAMES[i % len(_FRAMES)]
+                frame = _FRAMES[i % len(_ANSI_COLORS)]
                 label_part = f" {_DIM}{label}{_RST}" if label else ""
                 detail_part = f" {_DIM}{detail}{_RST}" if detail else ""
                 _sys.stdout.write(f"\r  {_BOLD}{color}{frame}{_RST}{label_part}{detail_part}")
