@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from .base import ICommand, CommandContext
-from ..ui.chat import print_agent_message, print_separator
+from ..ui.chat import print_agent_message, print_separator, print_status_line
 
 console = Console()
 
@@ -87,7 +87,7 @@ def _run_plan_loop(messages: list[dict], ctx: CommandContext, cfg) -> None:
     plan_done = False
 
     while not plan_done:
-        spinner = Spinner()
+        spinner = Spinner("Plan")
         spinner.start()
         try:
             response = call_llm(messages, cfg)
