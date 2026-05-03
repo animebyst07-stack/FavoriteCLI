@@ -295,7 +295,6 @@ def _handle_chat(
 
     if or_key:
         # --- Streaming path (OpenRouter) ---
-        console.print()
         console.print("  [bold #ff8c00]●[/bold #ff8c00] Favorite: ", end="")
         full = ""
         try:
@@ -314,27 +313,18 @@ def _handle_chat(
         except Exception as e:
             console.print(f"\n[red]Ошибка API: {e}[/red]")
             return
-        
-        # After stream, re-render and show stats
         if full.strip():
             from rich.markdown import Markdown
             from .agent.response_processor import strip_thinking_blocks
             from .agent.tags import strip_tags
-            
+
             clean = strip_tags(strip_thinking_blocks(full))
             if clean.strip():
-                # Move to new line and clear the "Favorite:" prefix line 
-                # actually it's easier to just print a separator and then markdown
-                console.print("\n")
                 print_separator()
                 console.print(Markdown(clean))
-                
-            # Update stats
             tokens = len(full) // 4
             mgr.update_stats(session_id, tokens)
-            console.print(f"\n[dim]est. tokens: {tokens}[/dim]")
-        else:
-            console.print("\n")
+            console.print(f"[dim]est. tokens: {tokens}[/dim]")
 
         _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
         return
@@ -385,11 +375,13 @@ def _handle_chat(
         return
 
     spinner.stop()
+    tokens = 0
     if response:
         tokens = len(response) // 4
         mgr.update_stats(session_id, tokens)
-        console.print(f"[dim]est. tokens: {tokens}[/dim]")
     _agent_loop(response, messages, ctx, mgr, session_id, cfg)
+    if response:
+        console.print(f"[dim]est. tokens: {tokens}[/dim]")
 
 
 def _agent_loop(
