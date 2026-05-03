@@ -128,6 +128,7 @@ def _build_messages(text: str, history: list[dict], system_prompt: str) -> list[
 
 def _save_est_tokens(session_id: str, mgr: SessionManager, tokens: int) -> None:
     mgr.update_stats(session_id, tokens)
+    # Estimate tokens: for Russian text, ~1 token per 3 chars (vs 4 for English)
     print_status_line("tokens", f"~{tokens:,}", color="#444444")
 
 
@@ -257,7 +258,7 @@ def _handle_chat(
                 print_separator()
                 console.print(Markdown(clean))
             _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
-            tokens = len(full) // 4
+            tokens = max(1, len(full) // 3)  # Russian ~3 chars per token
             _save_est_tokens(session_id, mgr, tokens)
         return
 
@@ -283,7 +284,8 @@ def _handle_chat(
                     spin2.stop()
                     _agent_loop(response, messages, ctx, mgr, session_id, cfg)
                     if response:
-                        _save_est_tokens(session_id, mgr, len(response) // 4)
+                        tokens = max(1, len(response) // 3)
+                        _save_est_tokens(session_id, mgr, tokens)
                     return
                 except Exception:
                     spin2.stop()
@@ -310,7 +312,8 @@ def _handle_chat(
     spinner.stop()
     if response:
         _agent_loop(response, messages, ctx, mgr, session_id, cfg)
-        _save_est_tokens(session_id, mgr, len(response) // 4)
+        tokens = max(1, len(response) // 3)  # Russian ~3 chars per token
+        _save_est_tokens(session_id, mgr, tokens)
 
 
 def _agent_loop(
