@@ -85,3 +85,8 @@ class SessionManager:
                 except Exception:
                     pass
         return result
+
+    def clear_history(self, session_id: str) -> None:
+        history_file = _BASE / session_id / "history.jsonl"
+        if history_file.exists():
+            history_file.write_text("", encoding="utf-8")
