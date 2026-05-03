@@ -68,6 +68,15 @@ class Config:
     def openrouter_keys(self) -> list[dict]:
         return self._keys.get("openrouter", [])
 
+    # --- NVIDIA ---
+    @property
+    def nvidia_key(self) -> str:
+        return self._keys.get("nvidia_key", "")
+
+    def set_nvidia_key(self, key: str) -> None:
+        self._keys["nvidia_key"] = key
+        _save("api_keys.json", self._keys)
+
     def add_openrouter_key(self, key: str, label: str = "", model: str = "qwen/qwen3-coder:free") -> None:
         keys = self._keys.setdefault("openrouter", [])
         is_first = len(keys) == 0
