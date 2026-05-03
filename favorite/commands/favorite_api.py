@@ -1,5 +1,5 @@
 from .base import ICommand, CommandContext
-from ..ui.chat import print_agent_message, print_separator
+from ..ui.chat import print_agent_message, print_separator, print_status_line
 from ..ui.welcome import print_info
 
 
@@ -52,7 +52,7 @@ class FavoriteApiCommand(ICommand):
                 except (EOFError, KeyboardInterrupt):
                     model_val = ""
                 cfg.add_favorite_key(key_val, model=model_val or None)
-                print_info(f"  Ключ добавлен{f' (модель: {model_val})' if model_val else ''}.")
+                print_status_line("Key Added", model_val or "сервер выберет модель", color="#ff8c00")
             elif choice == "2":
                 keys = cfg.favorite_api_keys
                 if not keys:
@@ -63,7 +63,7 @@ class FavoriteApiCommand(ICommand):
                 except (EOFError, KeyboardInterrupt):
                     continue
                 if n.isdigit() and cfg.remove_favorite_key(int(n) - 1):
-                    print_info("  Удалён.")
+                    print_status_line("Key Removed", color="#666666")
                 else:
                     print_info("  Неверный номер.")
             elif choice == "3":
@@ -86,7 +86,7 @@ class FavoriteApiCommand(ICommand):
                     continue
                 if tg_tok and tg_cid:
                     cfg.set_tg_bridge(tg_tok, tg_cid)
-                    print_info("  Мост сохранён. Следующий обрыв — URL подтянется автоматически.")
+                    print_status_line("TG Bridge", "сохранён — URL подтянется при обрыве", color="#ff8c00")
                 else:
                     print_info("  Отменено (нужны оба поля).")
             elif choice == "5":
@@ -111,6 +111,6 @@ class FavoriteApiCommand(ICommand):
                     continue
                 cfg.set_favorite_key_model(idx, model_val or None)
                 if model_val:
-                    print_info(f"  Модель задана: {model_val}")
+                    print_status_line("Model Set", model_val, color="#ff8c00")
                 else:
-                    print_info("  Модель сброшена — сервер будет выбирать сам.")
+                    print_status_line("Model Reset", "сервер выбирает сам", color="#666666")
