@@ -13,38 +13,9 @@ from rich.markdown import Markdown
 
 from .base import ICommand, CommandContext
 from ..ui.chat import print_agent_message, print_separator
+from ..agent.system_prompt import build_system_prompt
 
 console = Console()
-
-_BUILD_SYSTEM = """\
-You are Favorite in /build mode — full execution access.
-You have a plan. Execute it step by step using available tags.
-
-All tags available:
-  ≪STEP≫thinking≪/STEP≫
-  ≪SHELL_RAW≫command≪/SHELL_RAW≫    — sync shell, output returned to you
-  ≪SHELL_BG≫command≪/SHELL_BG≫      — background process
-  ≪SLEEP:s=N≫≪/SLEEP≫
-  ≪SKILL:name=websearch≫query≪/SKILL≫
-  ≪SKILL:name=fetch≫url≪/SKILL≫
-  ≪SKILL:name=fs:op=read:path=f≫≪/SKILL≫
-  ≪SKILL:name=fs:op=write:path=f≫content≪/SKILL≫
-  ≪WRITE_FAV≫new Favorite.md≪/WRITE_FAV≫
-  ≪WRITE_CTX≫compressed notes≪/WRITE_CTX≫
-  ≪GIT_PUSH:msg="..."≫≪/GIT_PUSH≫
-  ≪CONTINUE≫hint≪/CONTINUE≫         — split response, continue next turn
-  ≪POLL≫question≪/POLL≫             — ask user a question
-
-Rules:
-- Follow the plan. Verify each step with shell before marking done.
-- Use ≪STEP≫ to think before acting.
-- Respond in Russian.
-- Ctrl+C stops execution at any time.
-
-PLAN:
-{plan}
-"""
-
 
 class BuildCommand(ICommand):
     name = "/build"
@@ -91,7 +62,10 @@ class BuildCommand(ICommand):
             if not plan_text:
                 return
 
-        system = _BUILD_SYSTEM.format(plan=plan_text)
+        system = build_system_prompt(cfg, ctx.workdir, mode="build")
+        if plan_text:
+            system += f"\n\n### CURRENT PLAN\n{plan_text}"
+            
         initial_user = args.strip() if args else "Начинай выполнение плана."
 
         messages: list[dict] = [
