@@ -1,38 +1,41 @@
 """
 favorite/ui/spinner.py
-Animated gradient spinner — dark orange palette.
-Used for blocking LLM calls where we need animated feedback.
+Animated gradient spinner with ellipsis "Thinking..." animation.
+Dark-orange to light-orange gradient on both bullet and text.
 """
 import threading
 import time
 import sys
 
 
-# Dark orange gradient frames — bullet cycles through colours
-_FRAMES  = ["◐", "◓", "◑", "◒"]
-_COLORS  = [
+# Dark orange gradient for bullet frames
+_BULLET_COLORS = [
     "\033[38;2;180;60;0m",    # очень тёмный оранжевый
     "\033[38;2;210;90;0m",    # тёмный оранжевый
     "\033[38;2;255;140;0m",   # оранжевый (#ff8c00)
     "\033[38;2;230;110;0m",   # средний
 ]
-_RESET   = "\033[0m"
-_DIM     = "\033[2m"
-_BOLD    = "\033[1m"
+
+# Gradient for label text: dark → orange
+_LABEL_COLORS = [
+    "\033[38;2;120;40;0m",    # тёмный коричневый
+    "\033[38;2;160;60;0m",    # тёмный оранжевый
+    "\033[38;2;200;90;0m",    # средний оранжевый
+    "\033[38;2;255;140;0m",   # ярко-оранжевый
+]
+
+_BULLET_FRAMES = ["◐", "◓", "◑", "◒"]
+_RESET = "\033[0m"
+_DIM = "\033[2m"
+_BOLD = "\033[1m"
 
 
 class Spinner:
     """
-    Animated ◐◓◑◒ gradient spinner with optional label.
-
-    Usage:
-        s = Spinner("Thinking")
-        s.start()
-        ...blocking work...
-        s.stop()
-
-    Renders: ◐ Thinking   (cycling dark-orange gradient on the bullet)
-    All on one line, no newline, clears itself on stop().
+    Animated spinner: bullet cycles ◐◓◑◒ with gradient.
+    Label text also cycles with gradient + ellipsis animation: "Thinking", "Thinking.", "Thinking..", "Thinking..."
+    
+    All on one line via carriage return. Slow animation (0.3s per frame).
     """
 
     def __init__(self, label: str = ""):
@@ -49,18 +52,36 @@ class Spinner:
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=0.5)
-        # Clear the spinner line entirely
+        # Clear the spinner line
         sys.stdout.write("\r\033[K")
         sys.stdout.flush()
 
     def _spin(self) -> None:
-        label_part = f" {_DIM}{self.label}{_RESET}" if self.label else ""
         i = 0
         while not self._stop_event.is_set():
-            color = _COLORS[i % len(_COLORS)]
-            frame = _FRAMES[i % len(_FRAMES)]
-            line = f"\r  {_BOLD}{color}{frame}{_RESET}{label_part}"
+            # Bullet frame cycles every frame
+            bullet_idx = i % len(_BULLET_FRAMES)
+            bullet_frame = _BULLET_FRAMES[bullet_idx]
+            bullet_color = _BULLET_COLORS[bullet_idx % len(_BULLET_COLORS)]
+
+            # Label text cycles with gradient every 4 frames, ellipsis cycles every frame
+            label_idx = (i // 4) % len(_LABEL_COLORS)
+            label_color = _LABEL_COLORS[label_idx]
+            
+            # Ellipsis: 0-3 dots cycling
+            dots_count = i % 4
+            dots = "." * dots_count
+            label_text = self.label + dots if self.label else ""
+
+            # Render: "  ◐ Thinking..."
+            # Using \r to overwrite same line
+            line = (
+                f"\r  {_BOLD}{bullet_color}{bullet_frame}{_RESET} "
+                f"{_BOLD}{label_color}{label_text}{_RESET}   "  # trailing spaces to clear old text
+            )
             sys.stdout.write(line)
             sys.stdout.flush()
+
             i += 1
-            self._stop_event.wait(0.12)
+            # Slow animation: 0.3s per frame
+            self._stop_event.wait(0.3)
