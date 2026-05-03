@@ -64,6 +64,18 @@ def _dispatch(tag: ParsedTag, ctx: "CommandContext", cfg) -> str | None:
         return _handle_poll(tag)
     elif name == "WRITE_PLAN":
         return _handle_write_plan(tag, ctx)
+    elif name == "READ_FILE":
+        return _handle_read_file(tag, ctx)
+    elif name == "WRITE_FILE":
+        return _handle_write_file(tag, ctx)
+    elif name == "ASK_USER":
+        return _handle_ask_user(tag)
+    elif name == "SUB_AGENT":
+        return _handle_sub_agent(tag, cfg)
+    elif name == "THINK":
+        return None  # THINK is silent
+    elif name in ("ADD_TASK", "UPDATE_TASK", "COMPLETE_TASK", "LIST_TASKS"):
+        return _handle_tasks(tag, ctx)
     return None
 
 
@@ -242,6 +254,112 @@ def _handle_write_plan(tag: ParsedTag, ctx: "CommandContext") -> str | None:
     except Exception as e:
         console.print(f"  [dim #995555]WRITE_PLAN: {escape(str(e))}[/dim #995555]")
         return f"WRITE_PLAN ERROR: {e}"
+
+
+def _handle_read_file(tag: ParsedTag, ctx: "CommandContext") -> str:
+    path_str = tag.args.get("path", "").strip()
+    if not path_str:
+        return "READ_FILE ERROR: Missing path argument"
+    try:
+        path = Path(ctx.workdir) / path_str
+        if not path.exists():
+            return f"READ_FILE ERROR: File not found: {path_str}"
+        if not path.is_file():
+            return f"READ_FILE ERROR: Path is not a file: {path_str}"
+        content = path.read_text(encoding="utf-8")
+        console.print(f"  [dim #666666]read file: {path_str}[/dim #666666]")
+        return content
+    except Exception as e:
+        return f"READ_FILE ERROR: {e}"
+
+
+def _handle_write_file(tag: ParsedTag, ctx: "CommandContext") -> str:
+    path_str = tag.args.get("path", "").strip()
+    content = tag.body or ""
+    if not path_str:
+        return "WRITE_FILE ERROR: Missing path argument"
+    try:
+        path = Path(ctx.workdir) / path_str
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        console.print(f"  [dim #666666]wrote file: {path_str}[/dim #666666]")
+        return f"File saved: {path_str}"
+    except Exception as e:
+        return f"WRITE_FILE ERROR: {e}"
+
+
+def _handle_ask_user(tag: ParsedTag) -> str:
+    prompt_text = tag.args.get("text", "Question").strip()
+    body = (tag.body or "").strip()
+    display = f"{prompt_text}: {body}" if body else prompt_text
+    
+    console.print()
+    console.print(f"  [bold #ff8c00]?[/bold #ff8c00] {escape(display)}")
+    try:
+        answer = input("  → ").strip()
+        return f"[user answer]: {answer}"
+    except (EOFError, KeyboardInterrupt):
+        return "[no answer]"
+
+
+def _handle_sub_agent(tag: ParsedTag, cfg) -> str:
+    role = tag.args.get("role", "summarizer").strip()
+    task = (tag.body or "").strip()
+    if not task:
+        return "SUB_AGENT ERROR: Missing task description in body"
+    
+    console.print(f"  [bold #ff8c00]●[/bold #ff8c00] [dim]Spawning sub-agent:[/dim] [cyan]{role}[/cyan]")
+    
+    try:
+        from .sub_agent import run_sub_agent
+        result = run_sub_agent(role, task, cfg)
+        return f"[sub-agent {role} output]:\n{result}"
+    except Exception as e:
+        return f"SUB_AGENT ERROR: {e}"
+
+
+def _handle_tasks(tag: ParsedTag, ctx: "CommandContext") -> str:
+    from ..tasks.manager import TaskManager
+    session_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / ctx.session_id
+    manager = TaskManager(session_dir)
+    name = tag.name.upper()
+
+    try:
+        if name == "ADD_TASK":
+            title = (tag.body or tag.args.get("title", "")).strip()
+            if not title: return "ADD_TASK ERROR: Missing title"
+            task = manager.add_task(title)
+            console.print(f"  [dim #666666]task added: {task.id}[/dim #666666]")
+            return f"Task added: {task.id}"
+        
+        elif name == "UPDATE_TASK":
+            tid = tag.args.get("id", "").strip()
+            status = tag.args.get("status", "").strip()
+            if not tid: return "UPDATE_TASK ERROR: Missing id"
+            kwargs = {}
+            if status: kwargs["status"] = status
+            if tag.body: kwargs["notes"] = tag.body.strip()
+            task = manager.update_task(tid, **kwargs)
+            if not task: return f"UPDATE_TASK ERROR: Task {tid} not found"
+            console.print(f"  [dim #666666]task updated: {tid}[/dim #666666]")
+            return f"Task {tid} updated"
+
+        elif name == "COMPLETE_TASK":
+            tid = (tag.body or tag.args.get("id", "")).strip()
+            if not tid: return "COMPLETE_TASK ERROR: Missing id"
+            task = manager.update_task(tid, status="done")
+            if not task: return f"COMPLETE_TASK ERROR: Task {tid} not found"
+            console.print(f"  [dim #666666]task completed: {tid}[/dim #666666]")
+            return f"Task {tid} completed"
+
+        elif name == "LIST_TASKS":
+            tasks = manager.list_tasks()
+            if not tasks: return "No tasks found"
+            lines = [f"- [{t.id}] {t.status}: {t.title}" for t in tasks]
+            return "\n".join(lines)
+    except Exception as e:
+        return f"{name} ERROR: {e}"
+    return ""
 
 
 def _run_websearch(query: str, cfg) -> str | None:
