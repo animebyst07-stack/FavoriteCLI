@@ -11,8 +11,7 @@ from typing import Iterator
 def _inject_system_into_messages(messages: list[dict]) -> list[dict]:
     """
     FavoriteAPI and some Gemini-based APIs do NOT support role='system'.
-    This function extracts system messages and prepends them to the first
-    user message so the model actually sees the instructions.
+    Extracts system messages and prepends their content to the first user message.
     """
     system_parts: list[str] = []
     other: list[dict] = []
@@ -27,7 +26,6 @@ def _inject_system_into_messages(messages: list[dict]) -> list[dict]:
 
     system_text = "\n\n".join(system_parts)
 
-    # Find the first user message to inject into
     for i, msg in enumerate(other):
         if msg.get("role") == "user":
             other[i] = {
@@ -36,10 +34,23 @@ def _inject_system_into_messages(messages: list[dict]) -> list[dict]:
             }
             break
     else:
-        # No user message found — prepend as user turn
         other.insert(0, {"role": "user", "content": f"[SYSTEM INSTRUCTIONS]\n{system_text}"})
 
     return other
+
+
+def _build_favoriteapi_body(messages: list[dict], cfg) -> dict:
+    """
+    Build request body for FavoriteAPI.
+    - Injects system prompt into user message (Gemini doesn't support role=system)
+    - Only sends 'model' field if user explicitly configured one — never uses router defaults
+    """
+    processed = _inject_system_into_messages(messages)
+    body: dict = {"messages": processed}
+    fav = cfg.default_favorite_key()
+    if fav and fav.get("model"):
+        body["model"] = fav["model"]
+    return body
 
 
 def call_llm(messages: list[dict], cfg) -> str:
@@ -58,19 +69,13 @@ def call_llm(messages: list[dict], cfg) -> str:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
-            body = {
-                "model": model_name,
-                "messages": messages,
-            }
+            body = {"model": model_name, "messages": messages}
             r = req.post(
                 "https://integrate.api.nvidia.com/v1/chat/completions",
-                headers=headers,
-                json=body,
-                timeout=60,
+                headers=headers, json=body, timeout=60,
             )
             r.raise_for_status()
-            data = r.json()
-            return strip_thinking_blocks(data["choices"][0]["message"]["content"])
+            return strip_thinking_blocks(r.json()["choices"][0]["message"]["content"])
 
         if provider_name == "OpenRouter":
             headers = {
@@ -79,15 +84,10 @@ def call_llm(messages: list[dict], cfg) -> str:
                 "HTTP-Referer": "https://github.com/animebyst07-stack/FavoriteCLI",
                 "X-Title": "FavoriteCLI",
             }
-            body = {
-                "model": model_name,
-                "messages": messages,
-            }
+            body = {"model": model_name, "messages": messages}
             r = req.post(
                 "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=body,
-                timeout=60,
+                headers=headers, json=body, timeout=60,
             )
             data = r.json()
             if "error" in data:
@@ -95,21 +95,14 @@ def call_llm(messages: list[dict], cfg) -> str:
             return strip_thinking_blocks(data["choices"][0]["message"]["content"])
 
         if provider_name == "FavoriteAPI":
-            # FavoriteAPI/Gemini does NOT support role='system' — inject into user message
-            processed = _inject_system_into_messages(messages)
-            # Use the user's configured model, not the router's default
-            fav_cfg = cfg.default_favorite_key()
-            actual_model = (fav_cfg or {}).get("model") or model_name
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
-            body = {"messages": processed, "model": actual_model}
+            body = _build_favoriteapi_body(messages, cfg)
             r = req.post(
                 f"{cfg.favorite_api_base_url}/api/v1/chat",
-                headers=headers,
-                json=body,
-                timeout=90,
+                headers=headers, json=body, timeout=90,
             )
             r.raise_for_status()
             return strip_thinking_blocks(r.json()["choices"][0]["message"]["content"])
@@ -132,9 +125,7 @@ def call_llm(messages: list[dict], cfg) -> str:
         }
         r = req.post(
             "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=body,
-            timeout=60,
+            headers=headers, json=body, timeout=60,
         )
         data = r.json()
         if "error" in data:
@@ -143,19 +134,14 @@ def call_llm(messages: list[dict], cfg) -> str:
 
     fav = cfg.default_favorite_key()
     if fav:
-        processed = _inject_system_into_messages(messages)
         headers = {
             "Authorization": f"Bearer {fav['key']}",
             "Content-Type": "application/json",
         }
-        body = {"messages": processed}
-        if fav.get("model"):
-            body["model"] = fav["model"]
+        body = _build_favoriteapi_body(messages, cfg)
         r = req.post(
             f"{cfg.favorite_api_base_url}/api/v1/chat",
-            headers=headers,
-            json=body,
-            timeout=90,
+            headers=headers, json=body, timeout=90,
         )
         r.raise_for_status()
         return strip_thinking_blocks(r.json()["choices"][0]["message"]["content"])
@@ -192,10 +178,7 @@ def stream_llm(messages: list[dict], cfg) -> Iterator[str]:
 
     with req.post(
         "https://openrouter.ai/api/v1/chat/completions",
-        headers=headers,
-        json=body,
-        stream=True,
-        timeout=90,
+        headers=headers, json=body, stream=True, timeout=90,
     ) as r:
         r.raise_for_status()
         for raw_line in r.iter_lines():
