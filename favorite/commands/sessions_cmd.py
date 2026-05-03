@@ -1,5 +1,5 @@
 from .base import ICommand, CommandContext
-from ..ui.chat import print_agent_message, print_separator
+from ..ui.chat import print_agent_message, print_separator, print_status_line
 from ..ui.welcome import print_info
 from ..sessions.manager import SessionManager
 
@@ -11,9 +11,9 @@ class NewSessionCommand(ICommand):
 
     def execute(self, args: str, ctx: CommandContext) -> None:
         mgr = SessionManager()
-        print_agent_message("Создаю новую сессию...", "system")
+        print_status_line("New Session", "создаю...", color="#ff8c00")
         sid = mgr.create_session(workdir=ctx.workdir)
-        print_info(f"  Сессия создана: {sid}")
+        print_status_line("New Session", sid[:8], color="#ff8c00")
 
 
 class SessionCommand(ICommand):
@@ -29,5 +29,11 @@ class SessionCommand(ICommand):
         if not sessions:
             print_info("  Сессий нет.")
         for i, s in enumerate(sessions, 1):
-            print_info(f"  [{i}] {s['session_id'][:8]}...  |  {s.get('title','без названия')}  |  {s.get('created_at','?')}")
+            created = s.get("created_at", "?")[:16] if s.get("created_at") else "?"
+            title = s.get("title", "без названия")
+            print_status_line(
+                s["session_id"][:8],
+                f"{title}  •  {created}",
+                color="#888888",
+            )
         print_separator()
