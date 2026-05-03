@@ -1,5 +1,5 @@
 from .base import ICommand, CommandContext
-from ..ui.chat import print_agent_message, print_separator
+from ..ui.chat import print_agent_message, print_separator, print_status_line
 from ..ui.welcome import print_info
 
 # Человекочитаемые имена провайдеров по префиксу model_id
@@ -88,7 +88,7 @@ _CURATED_FALLBACK: dict[str, list] = {
 def _pick_model_menu(key_val: str) -> str:
     """Двухуровневое меню: провайдер → модели. Возвращает model_id."""
     print_separator()
-    print_info("  Загружаю модели с OpenRouter...")
+    print_status_line("Loading Models", "openrouter.ai...", color="#ff8c00")
     grouped = _fetch_all_models(key_val) or _CURATED_FALLBACK
     offline = not bool(_fetch_all_models.__doc__ and grouped is not _CURATED_FALLBACK)
 
