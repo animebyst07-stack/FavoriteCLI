@@ -2,6 +2,7 @@
 FavoriteCLI — main application entry point (DI container + run loop).
 """
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -35,6 +36,25 @@ from .commands.base import CommandContext
 from .agent.system_prompt import build_system_prompt
 
 console = Console()
+
+
+def estimate_tokens(text: str) -> int:
+    """
+    Accurate token estimation for mixed Russian/English text.
+
+    Tokenizer behaviour (GPT/Gemini style):
+    - Cyrillic letter: ~2 chars per token (e.g. "привет" = ~3 tokens)
+    - Latin word chars: ~4 chars per token
+    - Whitespace / punctuation: ~4 chars per token (grouped)
+    - Code / symbols: ~3 chars per token
+
+    Formula: cyr/2 + rest/4, rounded up.
+    """
+    if not text:
+        return 0
+    cyr = len(re.findall(r"[\u0400-\u04FF]", text))
+    rest = len(text) - cyr
+    return max(1, round(cyr / 2 + rest / 4))
 
 
 def _get_model_name(cfg) -> str:
@@ -128,9 +148,19 @@ def _build_messages(text: str, history: list[dict], system_prompt: str) -> list[
     return messages
 
 
-def _save_est_tokens(session_id: str, mgr: SessionManager, tokens: int) -> None:
+def _show_tokens(session_id: str, mgr: SessionManager, total_chars: int) -> None:
+    """Display token count using accurate mixed-language estimator."""
+    tokens = estimate_tokens(" " * total_chars)  # rough proxy via char count
+    # More accurate: pass actual text. Here we use char-based fallback.
+    # The caller should pass actual text when available.
     mgr.update_stats(session_id, tokens)
-    # Estimate tokens: for Russian text, ~1 token per 3 chars (vs 4 for English)
+    print_status_line("tokens", f"~{tokens:,}", color="#444444")
+
+
+def _show_tokens_from_text(session_id: str, mgr: SessionManager, text: str) -> None:
+    """Display token count from actual response text."""
+    tokens = estimate_tokens(text)
+    mgr.update_stats(session_id, tokens)
     print_status_line("tokens", f"~{tokens:,}", color="#444444")
 
 
@@ -244,7 +274,8 @@ def _handle_chat(
         except KeyboardInterrupt:
             console.print("\n[dim](прервано)[/dim]")
             if full:
-                _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
+                all_text = _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
+                _show_tokens_from_text(session_id, mgr, full + (all_text or ""))
             return
         except _req.exceptions.ConnectionError:
             console.print(f"\n[bold red]Не удалось подключиться к OpenRouter.[/bold red]")
@@ -259,9 +290,8 @@ def _handle_chat(
             if clean.strip():
                 print_separator()
                 console.print(Markdown(clean))
-            _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
-            tokens = max(1, len(full) // 3)  # Russian ~3 chars per token
-            _save_est_tokens(session_id, mgr, tokens)
+            all_text = _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
+            _show_tokens_from_text(session_id, mgr, full + (all_text or ""))
         return
 
     spinner = Spinner("Thinking")
@@ -284,10 +314,8 @@ def _handle_chat(
                 try:
                     response = call_llm(messages, cfg)
                     spin2.stop()
-                    _agent_loop(response, messages, ctx, mgr, session_id, cfg)
-                    if response:
-                        tokens = max(1, len(response) // 3)
-                        _save_est_tokens(session_id, mgr, tokens)
+                    all_text = _agent_loop(response, messages, ctx, mgr, session_id, cfg)
+                    _show_tokens_from_text(session_id, mgr, response + (all_text or ""))
                     return
                 except Exception:
                     spin2.stop()
@@ -313,9 +341,8 @@ def _handle_chat(
 
     spinner.stop()
     if response:
-        _agent_loop(response, messages, ctx, mgr, session_id, cfg)
-        tokens = max(1, len(response) // 3)  # Russian ~3 chars per token
-        _save_est_tokens(session_id, mgr, tokens)
+        all_text = _agent_loop(response, messages, ctx, mgr, session_id, cfg)
+        _show_tokens_from_text(session_id, mgr, response + (all_text or ""))
 
 
 def _agent_loop(
@@ -326,7 +353,11 @@ def _agent_loop(
     session_id: str,
     cfg,
     skip_first_print: bool = False,
-) -> None:
+) -> str:
+    """
+    Run the agentic tag-execution loop.
+    Returns concatenated text of ALL AI responses (for token counting).
+    """
     from .agent.tags import extract_tags, strip_tags
     from .agent.executor import execute_tags_with_output
     from .agent.llm import call_llm
@@ -378,3 +409,6 @@ def _agent_loop(
     from .agent.response_processor import strip_thinking_blocks
     final = strip_thinking_blocks(final)
     mgr.append_history(session_id, {"type": "agent", "content": final})
+
+    # Return all AI response text for accurate token counting by caller
+    return "\n".join(all_responses[1:]) if len(all_responses) > 1 else ""
