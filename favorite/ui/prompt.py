@@ -26,6 +26,8 @@ ALL_COMMANDS = [
     ("/architect",       "Режим архитектора (дорогая модель думает)"),
     ("/spec",            "Spec-Driven Development"),
     ("/usage",           "Статистика использования API"),
+    ("/memory",          "Просмотр / редактирование Favorite.md"),
+    ("/tasks",           "Управление задачами сессии"),
     ("/doctor",          "Диагностика системы"),
     ("/recap",           "Краткое резюме сессии"),
     ("/compact",         "Сжать контекст"),
@@ -66,7 +68,6 @@ class SlashCompleter(Completer):
 
 
 def _highlight(cmd: str, partial: str) -> HTML:
-    """Подсвечивает совпадающую часть оранжевым."""
     low_cmd, low_partial = cmd.lower(), partial.lower()
     result, i = "", 0
     while i < len(cmd):
@@ -79,22 +80,29 @@ def _highlight(cmd: str, partial: str) -> HTML:
     return HTML(result)
 
 
-def build_session() -> PromptSession:
+def build_session(on_export=None) -> PromptSession:
+    """
+    Build the main prompt session.
+    on_export: optional callable() — called when user presses ESC then END.
+               Saves current session to T3/session.txt.
+    """
     kb = KeyBindings()
 
     @kb.add("escape")
     def _noop(event):
-        # Escape просто сбрасывает текущий ввод, не выходит
         event.app.current_buffer.reset()
+
+    @kb.add("escape", "end")
+    def _export(event):
+        if on_export:
+            on_export()
 
     @kb.add("backspace")
     def _backspace_and_complete(event):
         buf = event.app.current_buffer
-        # Закрываем текущее меню если открыто
         if buf.complete_state:
             buf.cancel_completion()
         buf.delete_before_cursor(count=1)
-        # Переоткрываем подсказки если ещё в slash-команде
         if buf.text.startswith("/") and len(buf.text) >= 1:
             buf.start_completion(select_first=False)
 
@@ -105,7 +113,6 @@ def build_session() -> PromptSession:
         history=InMemoryHistory(),
         complete_while_typing=True,
         mouse_support=False,
-        # bottom_toolbar убран намеренно
     )
 
 
