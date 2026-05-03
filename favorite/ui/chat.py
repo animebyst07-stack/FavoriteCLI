@@ -70,6 +70,11 @@ def print_status(label: str, text: str = "", color: str = ORANGE) -> None:
 
 
 class StatusSpinner:
+    """
+    Animated gradient spinner via Rich markup.
+    Cycles dark-orange bullet frames with label.
+    Wraps the core Spinner to reuse logic.
+    """
     def __init__(self, label: str, detail: str = ""):
         self.label = label
         self.detail = detail
@@ -77,26 +82,43 @@ class StatusSpinner:
         self._thread = None
 
     def start(self) -> None:
+        import sys as _sys
+        _FRAMES  = ["◐", "◓", "◑", "◒"]
+        _ANSI_COLORS = [
+            "\033[38;2;180;60;0m",
+            "\033[38;2;210;90;0m",
+            "\033[38;2;255;140;0m",
+            "\033[38;2;230;110;0m",
+        ]
+        _RST  = "\033[0m"
+        _DIM  = "\033[2m"
+        _BOLD = "\033[1m"
+        label = self.label
+        detail = self.detail
+        stop_ev = self._stop
+
         def _run():
-            frames = ["◐", "◓", "◑", "◒"]
-            colors = ["#ff8c00", "#ffb347", "#ffd27a", "#ff8c00"]
-            for i, frame in enumerate(itertools.cycle(frames)):
-                if self._stop.is_set():
-                    break
-                color = colors[i % len(colors)]
-                line = f"[bold {color}]{frame}[/bold {color}] [dim {GRAY}]{escape(self.label)}[/dim {GRAY}]"
-                if self.detail:
-                    line += f" [dim #666666]{escape(self.detail)}[/dim #666666]"
-                console.print(line, end="\r")
-                time.sleep(0.12)
+            i = 0
+            while not stop_ev.is_set():
+                color = _ANSI_COLORS[i % len(_ANSI_COLORS)]
+                frame = _FRAMES[i % len(_FRAMES)]
+                label_part = f" {_DIM}{label}{_RST}" if label else ""
+                detail_part = f" {_DIM}{detail}{_RST}" if detail else ""
+                _sys.stdout.write(f"\r  {_BOLD}{color}{frame}{_RST}{label_part}{detail_part}")
+                _sys.stdout.flush()
+                i += 1
+                stop_ev.wait(0.12)
+
         self._thread = threading.Thread(target=_run, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
+        import sys as _sys
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=0.5)
-        console.print(" " * 120, end="\r")
+        _sys.stdout.write("\r\033[K")
+        _sys.stdout.flush()
 
 
 # ─── Shell / tool execution ───────────────────────────────────────────────────
