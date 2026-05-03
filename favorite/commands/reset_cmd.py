@@ -47,7 +47,9 @@ class ResetCommand(ICommand):
 
         # Обычный сброс — успех
         if result.get("reset"):
-            console.print(f"[bold {ORANGE}]●[/bold {ORANGE}] [dim {GRAY}]Контекст сброшен. История диалога очищена на сервере.[/dim {GRAY}]")
+            if ctx.mgr and ctx.session_id:
+                ctx.mgr.clear_history(ctx.session_id)
+            console.print(f"[bold {ORANGE}]●[/bold {ORANGE}] [dim {GRAY}]Контекст сброшен. История диалога очищена локально и на сервере.[/dim {GRAY}]")
         else:
             err = result.get("error", "неизвестная ошибка")
             console.print(f"[red]Не удалось сбросить контекст: {err}[/red]")
@@ -120,6 +122,8 @@ def _handle_limit_hit(client, result: dict) -> None:
         return
 
     if apply_result.get("reset"):
+        if ctx.mgr and ctx.session_id:
+            ctx.mgr.clear_history(ctx.session_id)
         action_label = {
             ("clear", "clear"): "Всё очищено",
             ("clear", "keep"): "context очищен, Favorite.md сохранён",
