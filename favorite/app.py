@@ -261,8 +261,7 @@ def _handle_chat(
             _save_est_tokens(session_id, mgr, tokens)
         return
 
-    print_status_line("Thinking", color="#ff8c00")
-    spinner = Spinner()
+    spinner = Spinner("Thinking")
     spinner.start()
     try:
         response = call_llm(messages, cfg)
@@ -277,7 +276,7 @@ def _handle_chat(
             if fresh_url and fresh_url != current_url:
                 cfg.set_favorite_api_base_url(fresh_url)
                 print_status_line("TG Bridge", f"новый URL: {fresh_url}", color="#ff8c00")
-                spin2 = Spinner()
+                spin2 = Spinner("Thinking")
                 spin2.start()
                 try:
                     response = call_llm(messages, cfg)
@@ -356,7 +355,7 @@ def _agent_loop(
         messages.append({"role": "assistant", "content": response})
         messages.append({"role": "user", "content": f"[tool output]\n{tool_output}"})
 
-        spinner = Spinner()
+        spinner = Spinner("Thinking")
         spinner.start()
         try:
             response = call_llm(messages, cfg)
