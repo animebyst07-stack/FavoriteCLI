@@ -119,6 +119,82 @@ def _build_messages(text: str, history: list[dict], system_prompt: str) -> list[
     return messages
 
 
+_EXPORT_PATH = Path(
+    "/storage/emulated/0/Цхранилище/Project/FavoriteCLI/T3/session.txt"
+)
+
+
+def _save_session_txt(mgr: "SessionManager", session_id: str, ctx) -> None:
+    """
+    ESC→END shortcut handler.
+    Dumps the full current session (history + meta + tool outputs) to _EXPORT_PATH.
+    Overwrites if the file already exists.
+    Prints a one-line confirmation.
+    """
+    from datetime import datetime, timezone
+
+    try:
+        meta = mgr.get_session(session_id) or {}
+        history = mgr.load_history(session_id)
+
+        lines: list[str] = []
+
+        # ── Header ──────────────────────────────────────────────────────────
+        lines.append("=" * 64)
+        lines.append("  FavoriteCLI — Session Export")
+        lines.append(f"  Exported : {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        lines.append(f"  Session  : {session_id}")
+        lines.append(f"  Workdir  : {ctx.workdir}")
+        started = meta.get("stats", {}).get("start_time", meta.get("created_at", "—"))
+        lines.append(f"  Started  : {started}")
+        stats = meta.get("stats", {})
+        lines.append(f"  Tokens   : ~{stats.get('total_tokens', 0)}  |  Requests: {stats.get('requests', 0)}")
+        lines.append("=" * 64)
+        lines.append("")
+
+        # ── Message history ──────────────────────────────────────────────────
+        for i, entry in enumerate(history, 1):
+            kind = entry.get("type", "?")
+            content = entry.get("content", "")
+
+            if kind == "user":
+                lines.append(f"[{i}] ▶ USER")
+                lines.append("-" * 48)
+                lines.append(content.strip())
+            elif kind in ("agent", "assistant"):
+                lines.append(f"[{i}] ● AGENT")
+                lines.append("-" * 48)
+                # Full content — includes tags (SHELL_RAW, READ_FILE etc.)
+                # so the user sees exactly what happened "under the hood"
+                lines.append(content.strip())
+            else:
+                lines.append(f"[{i}] ? {kind.upper()}")
+                lines.append("-" * 48)
+                lines.append(content.strip())
+
+            lines.append("")
+
+        lines.append("=" * 64)
+        lines.append("  END OF SESSION")
+        lines.append("=" * 64)
+
+        text = "\n".join(lines)
+
+        # ── Write (overwrite) ────────────────────────────────────────────────
+        _EXPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _EXPORT_PATH.write_text(text, encoding="utf-8")
+
+        msg_count = len(history)
+        console.print(
+            f"\n  [bold #ff8c00]✓[/bold #ff8c00] "
+            f"[dim]Сессия сохранена ({msg_count} сообщений) → "
+            f"{_EXPORT_PATH}[/dim]"
+        )
+
+    except Exception as exc:
+        console.print(f"\n  [red]Ошибка экспорта сессии: {exc}[/red]")
+
+
 def run() -> None:
     from .memory.hot_reload import start_watcher
     from .memory.favorite_md import _DEFAULT as FAV_MD_PATH
@@ -140,7 +216,10 @@ def run() -> None:
 
     watcher = start_watcher(str(FAV_MD_PATH), on_fav_md_change)
 
-    session = build_session()
+    def on_export():
+        _save_session_txt(mgr, session_id, ctx)
+
+    session = build_session(on_export=on_export)
     _show_home(workdir)
 
     try:
