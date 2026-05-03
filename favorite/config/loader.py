@@ -63,6 +63,14 @@ class Config:
             return True
         return False
 
+    def set_favorite_key_model(self, idx: int, model: str | None) -> bool:
+        keys = self._keys.get("favorite_api", [])
+        if 0 <= idx < len(keys):
+            keys[idx]["model"] = model
+            _save("api_keys.json", self._keys)
+            return True
+        return False
+
     # --- OpenRouter ---
     @property
     def openrouter_keys(self) -> list[dict]:
