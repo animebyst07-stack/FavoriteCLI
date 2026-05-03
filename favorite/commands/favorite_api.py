@@ -20,7 +20,7 @@ class FavoriteApiCommand(ICommand):
                 for i, k in enumerate(keys, 1):
                     key_str = k["key"]
                     masked = key_str[:8] + "..." + key_str[-4:] if len(key_str) > 14 else "***"
-                    model   = k.get("model") or "дефолтная"
+                    model   = k.get("model") or "(не задана — сервер выберет сам)"
                     role    = k.get("role") or "Не назначено"
                     default = " [дефолт]" if k.get("is_default") else ""
                     print_info(f"  [{i}] {masked}  |  модель: {model}  |  роль: {role}{default}")
@@ -30,6 +30,8 @@ class FavoriteApiCommand(ICommand):
             print_info("  [3] Изменить адрес сервера")
             bridge_status = "настроен" if cfg.has_tg_bridge() else "не настроен"
             print_info(f"  [4] Telegram-мост  ({bridge_status})")
+            if keys:
+                print_info("  [5] Задать модель для ключа")
             print_info(f"  [0] Назад  (сервер: {cfg.favorite_api_base_url})")
             try:
                 choice = input("  Выбери: ").strip()
@@ -45,8 +47,12 @@ class FavoriteApiCommand(ICommand):
                 if not key_val:
                     print_info("  Пусто — отменено.")
                     continue
-                cfg.add_favorite_key(key_val)
-                print_info("  Ключ добавлен.")
+                try:
+                    model_val = input("  Название модели (Enter — пропустить, сервер выберет сам): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    model_val = ""
+                cfg.add_favorite_key(key_val, model=model_val or None)
+                print_info(f"  Ключ добавлен{f' (модель: {model_val})' if model_val else ''}.")
             elif choice == "2":
                 keys = cfg.favorite_api_keys
                 if not keys:
@@ -83,3 +89,28 @@ class FavoriteApiCommand(ICommand):
                     print_info("  Мост сохранён. Следующий обрыв — URL подтянется автоматически.")
                 else:
                     print_info("  Отменено (нужны оба поля).")
+            elif choice == "5":
+                keys = cfg.favorite_api_keys
+                if not keys:
+                    print_info("  Нет ключей.")
+                    continue
+                if len(keys) > 1:
+                    try:
+                        n = input("  Номер ключа: ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        continue
+                    if not n.isdigit() or int(n) < 1 or int(n) > len(keys):
+                        print_info("  Неверный номер.")
+                        continue
+                    idx = int(n) - 1
+                else:
+                    idx = 0
+                try:
+                    model_val = input("  Название модели (Enter — сбросить на дефолт): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    continue
+                cfg.set_favorite_key_model(idx, model_val or None)
+                if model_val:
+                    print_info(f"  Модель задана: {model_val}")
+                else:
+                    print_info("  Модель сброшена — сервер будет выбирать сам.")
