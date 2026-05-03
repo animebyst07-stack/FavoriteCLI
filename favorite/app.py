@@ -6,11 +6,12 @@ import sys
 from pathlib import Path
 
 from rich.console import Console
+from rich.markdown import Markdown
 
 from .platform import detect_platform
 from .config.loader import get_config, reload_config
 from .ui.welcome import render_welcome, clear_screen
-from .ui.chat import print_agent_message, print_separator
+from .ui.chat import print_agent_message, print_separator, print_status_line
 from .ui.prompt import build_session, get_prompt_tokens
 from .ui.theme import STYLE
 from .sessions.manager import SessionManager
@@ -26,6 +27,9 @@ from .commands.agents_cmd import AgentsCommand
 from .commands.memory_cmd import MemoryCommand
 from .commands.tasks_cmd import TasksCommand
 from .commands.usage_cmd import UsageCommand
+from .commands.doctor_cmd import DoctorCommand
+from .commands.recap_cmd import RecapCommand
+from .commands.compact_cmd import CompactCommand
 from .commands.base import CommandContext
 from .agent.system_prompt import build_system_prompt
 
@@ -79,6 +83,9 @@ def _build_registry() -> CommandRegistry:
     reg.register(MemoryCommand())
     reg.register(TasksCommand())
     reg.register(UsageCommand())
+    reg.register(DoctorCommand())
+    reg.register(RecapCommand())
+    reg.register(CompactCommand())
     return reg
 
 
@@ -119,80 +126,9 @@ def _build_messages(text: str, history: list[dict], system_prompt: str) -> list[
     return messages
 
 
-_EXPORT_PATH = Path(
-    "/storage/emulated/0/Цхранилище/Project/FavoriteCLI/T3/session.txt"
-)
-
-
-def _save_session_txt(mgr: "SessionManager", session_id: str, ctx) -> None:
-    """
-    ESC→END shortcut handler.
-    Dumps the full current session (history + meta + tool outputs) to _EXPORT_PATH.
-    Overwrites if the file already exists.
-    Prints a one-line confirmation.
-    """
-    from datetime import datetime, timezone
-
-    try:
-        meta = mgr.get_session(session_id) or {}
-        history = mgr.load_history(session_id)
-
-        lines: list[str] = []
-
-        # ── Header ──────────────────────────────────────────────────────────
-        lines.append("=" * 64)
-        lines.append("  FavoriteCLI — Session Export")
-        lines.append(f"  Exported : {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        lines.append(f"  Session  : {session_id}")
-        lines.append(f"  Workdir  : {ctx.workdir}")
-        started = meta.get("stats", {}).get("start_time", meta.get("created_at", "—"))
-        lines.append(f"  Started  : {started}")
-        stats = meta.get("stats", {})
-        lines.append(f"  Tokens   : ~{stats.get('total_tokens', 0)}  |  Requests: {stats.get('requests', 0)}")
-        lines.append("=" * 64)
-        lines.append("")
-
-        # ── Message history ──────────────────────────────────────────────────
-        for i, entry in enumerate(history, 1):
-            kind = entry.get("type", "?")
-            content = entry.get("content", "")
-
-            if kind == "user":
-                lines.append(f"[{i}] ▶ USER")
-                lines.append("-" * 48)
-                lines.append(content.strip())
-            elif kind in ("agent", "assistant"):
-                lines.append(f"[{i}] ● AGENT")
-                lines.append("-" * 48)
-                # Full content — includes tags (SHELL_RAW, READ_FILE etc.)
-                # so the user sees exactly what happened "under the hood"
-                lines.append(content.strip())
-            else:
-                lines.append(f"[{i}] ? {kind.upper()}")
-                lines.append("-" * 48)
-                lines.append(content.strip())
-
-            lines.append("")
-
-        lines.append("=" * 64)
-        lines.append("  END OF SESSION")
-        lines.append("=" * 64)
-
-        text = "\n".join(lines)
-
-        # ── Write (overwrite) ────────────────────────────────────────────────
-        _EXPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _EXPORT_PATH.write_text(text, encoding="utf-8")
-
-        msg_count = len(history)
-        console.print(
-            f"\n  [bold #ff8c00]✓[/bold #ff8c00] "
-            f"[dim]Сессия сохранена ({msg_count} сообщений) → "
-            f"{_EXPORT_PATH}[/dim]"
-        )
-
-    except Exception as exc:
-        console.print(f"\n  [red]Ошибка экспорта сессии: {exc}[/red]")
+def _save_est_tokens(session_id: str, mgr: SessionManager, tokens: int) -> None:
+    mgr.update_stats(session_id, tokens)
+    print_status_line("tokens", f"~{tokens:,}", color="#444444")
 
 
 def run() -> None:
@@ -229,7 +165,7 @@ def run() -> None:
             except KeyboardInterrupt:
                 console.print("\n[dim]Ctrl+C — нажми ещё раз для выхода.[/dim]")
                 try:
-                    session.prompt([("class:prompt-arrow", "\u276f ")], style=STYLE)
+                    session.prompt([("class:prompt-arrow", " ")], style=STYLE)
                 except (KeyboardInterrupt, EOFError):
                     break
                 continue
@@ -289,12 +225,12 @@ def _handle_chat(
 ) -> None:
     from .agent.llm import call_llm, stream_llm
     from .ui.spinner import Spinner
+    from .ui.chat import StatusSpinner
     import requests as _req
 
     or_key = cfg.default_openrouter_key()
 
     if or_key:
-        # --- Streaming path (OpenRouter) ---
         console.print("  [bold #ff8c00]●[/bold #ff8c00] Favorite: ", end="")
         full = ""
         try:
@@ -314,22 +250,18 @@ def _handle_chat(
             console.print(f"\n[red]Ошибка API: {e}[/red]")
             return
         if full.strip():
-            from rich.markdown import Markdown
             from .agent.response_processor import strip_thinking_blocks
             from .agent.tags import strip_tags
-
             clean = strip_tags(strip_thinking_blocks(full))
             if clean.strip():
                 print_separator()
                 console.print(Markdown(clean))
+            _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
             tokens = len(full) // 4
-            mgr.update_stats(session_id, tokens)
-            console.print(f"[dim]est. tokens: {tokens}[/dim]")
-
-        _agent_loop(full, messages, ctx, mgr, session_id, cfg, skip_first_print=True)
+            _save_est_tokens(session_id, mgr, tokens)
         return
 
-    # --- Blocking path (FavoriteAPI via spinner) ---
+    print_status_line("Thinking", color="#ff8c00")
     spinner = Spinner()
     spinner.start()
     try:
@@ -338,19 +270,21 @@ def _handle_chat(
         spinner.stop()
         current_url = cfg.favorite_api_base_url
         if cfg.has_tg_bridge():
-            console.print("[dim]Ищу URL через Telegram-мост...[/dim]")
+            print_status_line("TG Bridge", "ищу новый URL...", color="#666666")
             from .bridge.tg_url import fetch_url, invalidate
             invalidate()
             fresh_url = fetch_url(cfg.tg_bridge_token, cfg.tg_bridge_chat_id)
             if fresh_url and fresh_url != current_url:
                 cfg.set_favorite_api_base_url(fresh_url)
-                console.print(f"[dim]Новый URL: {fresh_url} — повторяю...[/dim]")
+                print_status_line("TG Bridge", f"новый URL: {fresh_url}", color="#ff8c00")
                 spin2 = Spinner()
                 spin2.start()
                 try:
                     response = call_llm(messages, cfg)
                     spin2.stop()
                     _agent_loop(response, messages, ctx, mgr, session_id, cfg)
+                    if response:
+                        _save_est_tokens(session_id, mgr, len(response) // 4)
                     return
                 except Exception:
                     spin2.stop()
@@ -375,13 +309,9 @@ def _handle_chat(
         return
 
     spinner.stop()
-    tokens = 0
     if response:
-        tokens = len(response) // 4
-        mgr.update_stats(session_id, tokens)
-    _agent_loop(response, messages, ctx, mgr, session_id, cfg)
-    if response:
-        console.print(f"[dim]est. tokens: {tokens}[/dim]")
+        _agent_loop(response, messages, ctx, mgr, session_id, cfg)
+        _save_est_tokens(session_id, mgr, len(response) // 4)
 
 
 def _agent_loop(
@@ -406,7 +336,6 @@ def _agent_loop(
         tags = extract_tags(response)
         clean = strip_tags(response) if tags else response
 
-        # Print only if not already streamed to screen
         if clean.strip() and not (step == 0 and skip_first_print):
             print_agent_message(clean)
 
@@ -417,9 +346,6 @@ def _agent_loop(
             break
 
         tool_output = execute_tags_with_output(tags, ctx, cfg)
-
-        # Continue loop if: has actionable tags AND produced output
-        # CONTINUE tag always produces output (at least "[continue]")
         has_actions = any(
             t.name.upper() in ("SHELL_RAW", "SKILL", "CONTINUE", "POLL")
             for t in tags
@@ -435,10 +361,6 @@ def _agent_loop(
         try:
             response = call_llm(messages, cfg)
             spinner.stop()
-            if response:
-                tokens = len(response) // 4
-                mgr.update_stats(session_id, tokens)
-                console.print(f"[dim]est. tokens: {tokens}[/dim]")
         except KeyboardInterrupt:
             spinner.stop()
             console.print("\n[dim](прервано пользователем)[/dim]")
