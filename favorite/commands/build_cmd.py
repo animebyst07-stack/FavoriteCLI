@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 
 from .base import ICommand, CommandContext
-from ..ui.chat import print_agent_message, print_separator
+from ..ui.chat import print_agent_message, print_separator, print_status_line
 from ..agent.system_prompt import build_system_prompt
 
 console = Console()
@@ -62,6 +62,7 @@ class BuildCommand(ICommand):
             if not plan_text:
                 return
 
+        print_status_line("Build", "Loading plan", color="#ff8c00")
         system = build_system_prompt(cfg, ctx.workdir, mode="build")
         if plan_text:
             system += f"\n\n### CURRENT PLAN\n{plan_text}"
@@ -84,7 +85,7 @@ def _run_build_loop(messages: list[dict], ctx: CommandContext, cfg) -> None:
     from ..ui.spinner import Spinner
 
     while True:
-        spinner = Spinner()
+        spinner = Spinner("Build")
         spinner.start()
         try:
             response = call_llm(messages, cfg)
