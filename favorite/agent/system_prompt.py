@@ -55,6 +55,13 @@ def build_system_prompt(cfg, workdir: str, mode: str = "chat") -> str:
         "11. If after fetching you still have no concrete data — say so honestly. Never make up numbers.",
         "12. Never state a specific number you are not certain about. Instead say: 'не нашёл точных данных, попробую другой источник' and retry with fetch.",
         "",
+        "### FILE EXPLORATION RULES",
+        "13. When asked to analyze, explore or scan the project — first run ls in the working directory to see what actually exists. Do NOT guess.",
+        "14. NEVER assume or invent file names. Only reference files that appeared in ls/find output or that the user explicitly named in their message.",
+        "15. The `sessions/` directory contains internal chat logs — ignore it entirely when exploring the project.",
+        "16. For project analysis focus on: *.py source files, *.md docs, config/*.json, requirements.txt — read those, not session files.",
+        "17. If you ran ls and a file is NOT in the output — it does not exist. Do not search for it with find unless the user specifically asked.",
+        "",
         "### Favorite.md (Global Context)",
         favorite_content if favorite_content else "(empty)",
     ]
