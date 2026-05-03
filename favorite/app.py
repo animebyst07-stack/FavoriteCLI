@@ -67,26 +67,32 @@ def _get_model_name(cfg) -> str:
 
 
 def _pick_workdir() -> str:
+    home = str(Path.home())
+    cwd = os.getcwd()
     console.print(
         "\n[bold #ff8c00]Выбери рабочую директорию:[/bold #ff8c00]\n"
-        "  [1] Текущая директория\n"
+        f"  [1] Текущая директория  [dim]({cwd})[/dim]\n"
         "  [2] Указать путь\n"
+        f"  [3] Домашняя директория [dim]({home})[/dim]\n"
     )
     while True:
         try:
-            choice = input("  Выбери [1/2]: ").strip()
+            choice = input("  Выбери [1/2/3]: ").strip()
         except (EOFError, KeyboardInterrupt):
-            return os.getcwd()
+            return cwd
         if choice == "1":
-            return os.getcwd()
+            return cwd
+        if choice == "3":
+            return home
         if choice == "2":
             while True:
                 try:
                     p = input("  Путь: ").strip()
                 except (EOFError, KeyboardInterrupt):
-                    return os.getcwd()
-                if Path(p).is_dir():
-                    return str(Path(p).resolve())
+                    return cwd
+                expanded = str(Path(p).expanduser())
+                if Path(expanded).is_dir():
+                    return str(Path(expanded).resolve())
                 console.print(f"  [red]Не найдено: {p}[/red]")
 
 
