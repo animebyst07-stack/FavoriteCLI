@@ -19,6 +19,11 @@ class SessionManager:
             "workdir": workdir,
             "leading_main_agent": "",
             "agents": [],
+            "stats": {
+                "total_tokens": 0,
+                "requests": 0,
+                "start_time": datetime.now(timezone.utc).isoformat()
+            }
         }
         session_dir = _BASE / sid
         session_dir.mkdir(parents=True, exist_ok=True)
@@ -27,6 +32,23 @@ class SessionManager:
         )
         (session_dir / "history.jsonl").write_text("", encoding="utf-8")
         return sid
+
+    def update_stats(self, session_id: str, tokens: int) -> None:
+        meta_file = _BASE / session_id / "meta.json"
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                if "stats" not in meta:
+                    meta["stats"] = {
+                        "total_tokens": 0,
+                        "requests": 0,
+                        "start_time": meta.get("created_at", datetime.now(timezone.utc).isoformat())
+                    }
+                meta["stats"]["total_tokens"] += tokens
+                meta["stats"]["requests"] += 1
+                meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
 
     def list_sessions(self) -> list[dict]:
         result = []
